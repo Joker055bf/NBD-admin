@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f8f5" />
+    <title>بوابة الإدارة | منصة الوحدة التطوعية</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script defer src="firebase-config.js"></script>
+    <script defer src="admin.js"></script>
+  </head>
+  <body class="admin-body">
+    <header class="admin-topbar">
+      <a class="brand admin-brand" href="index.html">
+        <img class="brand-logo" src="logo.png" alt="جمعية نبض التطوعية - Nabd Volunteering Association" />
+      </a>
+    </header>
+    <main class="admin-page">
+      <section class="admin-login-card" id="adminLoginPanel">
+        <span class="admin-login-icon">⌘</span>
+        <span class="section-kicker">دخول مخصص للمسؤولين</span>
+        <h1>بوابة إدارة منصة الوحدة التطوعية</h1>
+        <p>سجّل الدخول بحساب إداري أنشأته إدارة الجمعية.</p>
+        <form id="adminLoginForm">
+          <label class="field-label" for="adminEmail">البريد الإلكتروني</label>
+          <input class="dialog-input" id="adminEmail" type="email" autocomplete="username" required />
+          <label class="field-label" for="adminPassword">كلمة المرور</label>
+          <input class="dialog-input" id="adminPassword" type="password" autocomplete="current-password" required />
+          <button type="submit" class="primary-button auth-submit">دخول لوحة التحكم</button>
+        </form>
+        <p class="admin-config-note" id="adminConfigNote" hidden>أضف إعدادات مشروع Firebase إلى firebase-config.js لتفعيل دخول المسؤول.</p>
+      </section>
+
+      <section class="admin-dashboard" id="adminDashboard" hidden>
+        <div class="admin-dashboard-heading">
+          <div><span class="section-kicker">إدارة الجمعية</span><h1>لوحة التحكم</h1><p>إدارة المبادرات والحسابات وطلبات المشاركة.</p></div>
+          <div class="admin-session"><span class="admin-session-name" id="adminSessionName"></span><button type="button" id="adminLogoutButton">تسجيل الخروج</button></div>
+        </div>
+        <section class="admin-stat-row" aria-label="ملخص إداري">
+          <article><span>المتطوعون</span><strong id="adminVolunteerCount">0</strong></article>
+          <article><span>المبادرات</span><strong id="adminInitiativeCount">0</strong></article>
+          <article><span>طلبات المشاركة</span><strong id="adminRequestCount">0</strong></article>
+        </section>
+        <section class="admin-grid">
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>إضافة مبادرة</h2><p>أضف فرصة لتظهر في الموقع العام.</p></div></div>
+            <form id="initiativeForm" class="admin-initiative-form">
+              <label class="field-label" for="initiativeTitle">اسم المبادرة</label>
+              <input class="dialog-input" id="initiativeTitle" required />
+              <label class="field-label" for="initiativeDescription">الوصف</label>
+              <textarea class="dialog-input" id="initiativeDescription" rows="3" required></textarea>
+              <div class="admin-form-row">
+                <div><label class="field-label" for="initiativeCategory">المجال</label><input class="dialog-input" id="initiativeCategory" placeholder="مثل: البيئة" required /></div>
+                <div><label class="field-label" for="initiativeDate">تاريخ التنفيذ</label><input class="dialog-input" id="initiativeDate" type="date" required /></div>
+              </div>
+              <div class="admin-form-row">
+                <div><label class="field-label" for="initiativeLocation">الموقع</label><input class="dialog-input" id="initiativeLocation" required /></div>
+                <div><label class="field-label" for="initiativeHours">الساعات</label><input class="dialog-input" id="initiativeHours" type="number" min="1" max="24" required /></div>
+              </div>
+              <button class="primary-button auth-submit" type="submit">نشر المبادرة</button>
+            </form>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>طلبات المشاركة</h2><p>طلبات المتطوعين الجديدة ومتابعتها.</p></div></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المتطوع</th><th>المبادرة</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody id="participationRows"></tbody></table><p class="admin-empty" id="requestsEmpty">لا توجد طلبات مشاركة بعد.</p></div>
+          </article>
+        </section>
+        <section class="admin-panel admin-users-panel">
+          <div class="admin-panel-heading"><div><h2>حسابات المستخدمين</h2><p>يُنشأ كل حساب جديد بصلاحية متطوع. لا تغيّر الصلاحيات إلا بعد التحقق من الشخص.</p></div></div>
+          <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>الاسم</th><th>البريد الإلكتروني</th><th>الصلاحية</th><th>حفظ</th></tr></thead><tbody id="adminUserRows"></tbody></table><p class="admin-empty" id="usersEmpty">لا توجد حسابات متطوعين.</p></div>
+        </section>
+        <section class="admin-panel admin-initiatives-panel">
+          <div class="admin-panel-heading"><div><h2>المبادرات المنشورة</h2><p>إخفاء المبادرة يوقف ظهورها للزوار.</p></div></div>
+          <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المبادرة</th><th>الموعد</th><th>الحالة</th><th>النشر</th></tr></thead><tbody id="adminInitiativeRows"></tbody></table><p class="admin-empty" id="initiativesEmpty">لا توجد مبادرات محفوظة.</p></div>
+        </section>
+      </section>
+      <p class="admin-page-footer">إدارة الصلاحيات محمية بقواعد Firestore المنشورة للمشروع.</p>
+    </main>
+    <div class="toast" id="adminToast" role="status" aria-live="polite"></div>
+  </body>
+</html>
