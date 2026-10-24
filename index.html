@@ -12,6 +12,7 @@
     <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
     <script defer src="firebase-config.js"></script>
     <script defer src="admin.js"></script>
   </head>
@@ -29,10 +30,21 @@
         <p>سجّل الدخول بحساب إداري أنشأته إدارة الجمعية.</p>
         <form id="adminLoginForm">
           <label class="field-label" for="adminUsername">اسم المستخدم</label>
-          <input class="dialog-input" id="adminUsername" type="text" autocomplete="username" placeholder="مثال: Yasser" required />
+          <input class="dialog-input" id="adminUsername" type="text" autocomplete="off" placeholder="" required />
           <label class="field-label" for="adminPassword">كلمة المرور</label>
           <input class="dialog-input" id="adminPassword" type="password" autocomplete="current-password" required />
           <button type="submit" class="primary-button auth-submit">دخول لوحة التحكم</button>
+        </form>
+        <button type="button" class="signup-below-login" id="founderSetupToggle" hidden>تهيئة حساب المؤسس الأول</button>
+        <form id="founderSetupForm" class="auth-form" hidden>
+          <p class="admin-config-note">هذه التهيئة متاحة مرة واحدة فقط. أدخل رمز التهيئة السري الذي أعددته في Firebase، ولا تشاركه مع أحد. إذا كان حساب Yasser موجودًا، سيتم تعيين كلمة المرور الجديدة له.</p>
+          <label class="field-label" for="founderDisplayName">اسم المؤسس</label>
+          <input class="dialog-input" id="founderDisplayName" type="text" maxlength="100" autocomplete="name" required />
+          <label class="field-label" for="founderPassword">كلمة مرور حساب Yasser</label>
+          <input class="dialog-input" id="founderPassword" type="password" minlength="8" autocomplete="new-password" required />
+          <label class="field-label" for="founderSetupCode">رمز التهيئة السري</label>
+          <input class="dialog-input" id="founderSetupCode" type="password" autocomplete="off" required />
+          <button type="submit" class="primary-button auth-submit">إنشاء حساب المؤسس</button>
         </form>
         <p class="admin-config-note" id="adminConfigNote" hidden>أضف إعدادات مشروع Firebase إلى firebase-config.js لتفعيل دخول المسؤول.</p>
       </section>

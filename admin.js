@@ -3,10 +3,13 @@ const firebaseReady = typeof firebase !== "undefined"
   && Object.values(firebaseConfig).every((value) => typeof value === "string" && value.trim());
 const auth = firebaseReady ? firebase.auth() : null;
 const db = firebaseReady ? firebase.firestore() : null;
+const functions = firebaseReady ? firebase.app().functions("us-central1") : null;
 const loginPanel = document.getElementById("adminLoginPanel");
 const dashboard = document.getElementById("adminDashboard");
 const toast = document.getElementById("adminToast");
 const adminAuthDomain = "admin.nbda-1ee36.firebaseapp.com";
+const founderSetupToggle = document.getElementById("founderSetupToggle");
+const founderSetupForm = document.getElementById("founderSetupForm");
 let signedInAdmin = null;
 let toastTimer;
 
@@ -21,17 +24,33 @@ function errorMessage(error) {
   const messages = {
     "auth/invalid-credential": "بيانات الدخول غير صحيحة.",
     "auth/invalid-email": "اسم المستخدم غير صالح.",
+    "auth/configuration-not-found": "تسجيل الدخول بالبريد وكلمة المرور غير مفعّل في Firebase Authentication. فعّل Email/Password من إعدادات تسجيل الدخول في Firebase Console.",
     "auth/too-many-requests": "محاولات كثيرة. حاول بعد قليل.",
     "auth/network-request-failed": "تعذر الاتصال. تحقق من الإنترنت.",
     "permission-denied": "رفضت قواعد Firestore العملية. تحقق من دور المسؤول والقواعد المنشورة.",
-    "firestore/permission-denied": "رفضت قواعد Firestore العملية. تحقق من دور المسؤول والقواعد المنشورة."
+    "firestore/permission-denied": "رفضت قواعد Firestore العملية. تحقق من دور المسؤول والقواعد المنشورة.",
+    "functions/already-exists": "تم إعداد حساب المؤسس مسبقًا. لا يمكن إنشاء مؤسس آخر بهذه الطريقة.",
+    "functions/failed-precondition": "رمز التهيئة غير صحيح أو أن إعداد المؤسس غير متاح.",
+    "functions/invalid-argument": "تحقق من الاسم وكلمة المرور ورمز التهيئة.",
+    "functions/not-found": "خدمة إنشاء المؤسس غير منشورة بعد. اتبع خطوات النشر في دليل Firebase."
   };
   return messages[error.code] || error.message || "حدث خطأ غير متوقع.";
 }
 
+async function updateFounderSetupAvailability() {
+  if (!firebaseReady) return;
+  try {
+    const result = await functions.httpsCallable("founderSetup")({ action: "status" });
+    founderSetupToggle.hidden = result.data.complete;
+  } catch (error) {
+    founderSetupToggle.hidden = true;
+    showToast(errorMessage(error));
+  }
+}
+
 async function verifyAdmin(user) {
   const profile = await db.collection("adminAccounts").doc(user.uid).get();
-  if (!profile.exists) {
+  if (!profile.exists || profile.data().role !== "admin") {
     await auth.signOut();
     loginPanel.hidden = false;
     dashboard.hidden = true;
@@ -53,8 +72,8 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (even
     return;
   }
   const username = document.getElementById("adminUsername").value.trim();
-  if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username)) {
-    showToast("اكتب اسم مستخدم من 3 إلى 32 حرفًا إنجليزيًا أو رقمًا.");
+  if (username.toLowerCase() !== "yasser") {
+    showToast("اسم المستخدم للمسؤول هو Yasser.");
     return;
   }
   try {
@@ -65,6 +84,47 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (even
     await verifyAdmin(credential.user);
   } catch (error) {
     showToast(errorMessage(error));
+  }
+});
+
+founderSetupToggle.addEventListener("click", () => {
+  founderSetupForm.hidden = !founderSetupForm.hidden;
+});
+
+founderSetupForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!firebaseReady) {
+    showToast("أضف إعدادات Firebase إلى firebase-config.js أولًا.");
+    return;
+  }
+
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  const displayName = document.getElementById("founderDisplayName").value.trim();
+  const password = document.getElementById("founderPassword").value;
+  const setupCodeInput = document.getElementById("founderSetupCode");
+  const setupCode = setupCodeInput.value;
+  button.disabled = true;
+
+  try {
+    await functions.httpsCallable("founderSetup")({
+      action: "create",
+      displayName,
+      password,
+      setupCode
+    });
+    founderSetupForm.reset();
+    founderSetupToggle.hidden = true;
+    setupCodeInput.value = "";
+    showToast("تم إنشاء حساب المؤسس. جارٍ تسجيل الدخول...");
+    const credential = await auth.signInWithEmailAndPassword(
+      `yasser@${adminAuthDomain}`,
+      password
+    );
+    await verifyAdmin(credential.user);
+  } catch (error) {
+    showToast(errorMessage(error));
+  } finally {
+    button.disabled = false;
   }
 });
 
@@ -285,6 +345,7 @@ document.getElementById("initiativeForm").addEventListener("submit", async (even
 if (!firebaseReady) {
   document.getElementById("adminConfigNote").hidden = false;
 } else {
+  updateFounderSetupAvailability();
   auth.onAuthStateChanged(async (user) => {
     if (!user) {
       signedInAdmin = null;
