@@ -10,6 +10,7 @@ const toast = document.getElementById("adminToast");
 const adminAuthDomain = "admin.nbda-1ee36.firebaseapp.com";
 const founderSetupToggle = document.getElementById("founderSetupToggle");
 const founderSetupForm = document.getElementById("founderSetupForm");
+const founderSetupStatusNote = document.getElementById("founderSetupStatusNote");
 let signedInAdmin = null;
 let toastTimer;
 
@@ -42,9 +43,12 @@ async function updateFounderSetupAvailability() {
   try {
     const result = await functions.httpsCallable("founderSetup")({ action: "status" });
     founderSetupToggle.hidden = result.data.complete;
+    founderSetupToggle.disabled = false;
+    founderSetupStatusNote.hidden = true;
   } catch (error) {
-    founderSetupToggle.hidden = true;
-    showToast(errorMessage(error));
+    founderSetupToggle.hidden = false;
+    founderSetupToggle.disabled = true;
+    founderSetupStatusNote.hidden = false;
   }
 }
 
