@@ -282,8 +282,28 @@ th:first-child,td:first-child { padding-right: 18px; }th:last-child,td:last-chil
 .admin-initiative-form .field-label { margin-top: 10px; }.admin-initiative-form textarea { height: auto; min-height: 64px; padding-top: 8px; resize: vertical; }.admin-form-row { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }.admin-form-row > div { min-width: 0; }
 .admin-initiative-form .dialog-input { font-size: 10px; }.admin-initiative-form .auth-submit { margin-top: 15px; }
 .admin-table-wrap { overflow-x: auto; }.admin-table { width: 100%; min-width: 460px; border-collapse: collapse; white-space: nowrap; text-align: right; }.admin-table th { height: 34px; padding: 0 7px; border-bottom: 1px solid #eff1ee; color: #99a19a; font-size: 9px; font-weight: 500; }.admin-table td { height: 45px; padding: 5px 7px; border-bottom: 1px solid #f0f2ef; color: #5f6d63; font-size: 9px; }.admin-empty { padding: 18px 5px; color: #9aa29b; font-size: 9px; text-align: center; }
+.admin-table a { color: #267754; text-decoration: underline; }
 .admin-users-panel,.admin-initiatives-panel { margin-bottom: 14px; }
 .admin-page-footer { padding: 12px; color: #9aa29b; font-size: 9px; text-align: center; }
+.role-dashboard-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; align-items: start; }
+.role-dashboard-grid[hidden],[data-role-panel][hidden] { display: none; }
+.role-dashboard-grid > .admin-panel { margin-bottom: 0; }
+.role-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; margin-bottom: 15px; }
+.role-form-grid > .field-label { min-width: 0; margin-top: 0; }
+.role-form-grid textarea { min-height: 65px; resize: vertical; }
+.role-form-grid > .auth-submit { align-self: end; }
+.role-inline-form { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: end; margin-bottom: 12px; }
+.role-inline-form .field-label { margin: 0; }
+.role-inline-form .auth-submit { margin: 0; }
+.role-summary-stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 14px; }
+.role-summary-stats span { padding: 9px 12px; border-radius: 8px; color: #778178; background: #f5f8f5; font-size: 10px; }
+.role-summary-stats strong { margin-right: 5px; color: #2f704d; font-family: "DM Sans",sans-serif; }
+.public-team-join { width: min(1120px, calc(100% - 44px)); margin: 0 auto 32px; padding: 19px; border: 1px solid #eef0ec; border-radius: 12px; background: #fff; }
+.team-join-form { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 9px; align-items: end; max-width: 650px; margin-bottom: 12px; }
+.team-join-form .field-label { margin: 0; }
+.team-join-form button { min-height: 39px; }
+.member-records-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin-top: 20px; }
+.member-records-grid h3 { margin: 0 0 8px; color: #354339; font-size: 12px; }
 .auth-screen { min-height: 100vh; display: grid; place-items: center; padding: 28px 16px; background: radial-gradient(ellipse at 50% 0%, #eaf3eb 0, #f7f8f5 52%); }
 .auth-card { width: min(100%, 440px); padding: 30px; border: 1px solid #eef0ec; border-radius: 17px; background: #fff; box-shadow: 0 18px 55px #203a2910; }
 .auth-brand { padding: 0; margin-bottom: 27px; }.auth-brand .brand-logo { width: 150px; height: 90px; }
@@ -360,7 +380,7 @@ th:first-child,td:first-child { padding-right: 18px; }th:last-child,td:last-chil
   .page-content { padding: 25px 20px 17px; }.overview-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
-  .admin-topbar { min-height: 60px; padding: 0 13px; }.admin-page { width: calc(100% - 24px); margin: 22px auto; }.admin-login-card { margin: 9vh auto; padding: 22px 18px; }.admin-dashboard-heading { align-items: flex-start; flex-direction: column; }.admin-session { width: 100%; justify-content: space-between; }.admin-stat-row { gap: 7px; }.admin-stat-row article { padding: 11px 8px; }.admin-stat-row span { font-size: 8px; }.admin-stat-row strong { font-size: 18px; }.admin-grid { grid-template-columns: 1fr; }.admin-panel { padding: 13px; }.admin-form-row { gap: 7px; }.user-role-select { max-width: 140px; }
+  .admin-topbar { min-height: 60px; padding: 0 13px; }.admin-page { width: calc(100% - 24px); margin: 22px auto; }.admin-login-card { margin: 9vh auto; padding: 22px 18px; }.admin-dashboard-heading { align-items: flex-start; flex-direction: column; }.admin-session { width: 100%; justify-content: space-between; }.admin-stat-row { gap: 7px; }.admin-stat-row article { padding: 11px 8px; }.admin-stat-row span { font-size: 8px; }.admin-stat-row strong { font-size: 18px; }.admin-grid,.role-dashboard-grid { grid-template-columns: 1fr; }.admin-panel { padding: 13px; }.admin-form-row,.role-form-grid { gap: 7px; }.user-role-select { max-width: 140px; }.role-inline-form { grid-template-columns: 1fr; }.team-join-form { grid-template-columns: 1fr; }.public-team-join { width: calc(100% - 26px); margin-bottom: 24px; padding: 14px; }.member-records-grid { grid-template-columns: 1fr; }
   .public-header { height: 62px; gap: 8px; padding: 0 12px; }
   .public-brand { gap: 7px; }.public-brand .brand-logo { width: 100px; height: 62px; }
   .public-nav { display: none; }

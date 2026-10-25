@@ -12,15 +12,15 @@
     <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-    <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
     <script defer src="firebase-config.js"></script>
     <script defer src="admin.js"></script>
   </head>
   <body class="admin-body">
     <header class="admin-topbar">
-      <a class="brand admin-brand" href="index.html">
+      <a class="brand admin-brand" href="https://joker055bf.github.io/NBD/" aria-label="العودة إلى الموقع العام">
         <img class="brand-logo" src="logo.png" alt="جمعية نبض التطوعية - Nabd Volunteering Association" />
       </a>
+      <a href="https://joker055bf.github.io/NBD/" class="admin-back-link">العودة للموقع العام <span>←</span></a>
     </header>
     <main class="admin-page">
       <section class="admin-login-card" id="adminLoginPanel">
@@ -29,38 +29,25 @@
         <h1>بوابة إدارة منصة الوحدة التطوعية</h1>
         <p>سجّل الدخول بحساب إداري أنشأته إدارة الجمعية.</p>
         <form id="adminLoginForm">
-          <label class="field-label" for="adminUsername">اسم المستخدم</label>
-          <input class="dialog-input" id="adminUsername" type="text" autocomplete="off" placeholder="" required />
+          <label class="field-label" for="adminUsername">اسم المستخدم أو البريد الإلكتروني</label>
+          <input class="dialog-input" id="adminUsername" type="text" autocomplete="username" placeholder="Yasser أو البريد الإلكتروني" required />
           <label class="field-label" for="adminPassword">كلمة المرور</label>
           <input class="dialog-input" id="adminPassword" type="password" autocomplete="current-password" required />
           <button type="submit" class="primary-button auth-submit">دخول لوحة التحكم</button>
         </form>
-        <button type="button" class="signup-below-login" id="founderSetupToggle" hidden>تهيئة حساب المؤسس الأول</button>
-        <p class="admin-config-note" id="founderSetupStatusNote" hidden>الميزة مضافة، لكن خدمة Firebase لم تُنشر بعد. انشر Cloud Function أولًا لتفعيلها.</p>
-        <form id="founderSetupForm" class="auth-form" hidden>
-          <p class="admin-config-note">هذه التهيئة متاحة مرة واحدة فقط. أدخل رمز التهيئة السري الذي أعددته في Firebase، ولا تشاركه مع أحد. إذا كان حساب Yasser موجودًا، سيتم تعيين كلمة المرور الجديدة له.</p>
-          <label class="field-label" for="founderDisplayName">اسم المؤسس</label>
-          <input class="dialog-input" id="founderDisplayName" type="text" maxlength="100" autocomplete="name" required />
-          <label class="field-label" for="founderPassword">كلمة مرور حساب Yasser</label>
-          <input class="dialog-input" id="founderPassword" type="password" minlength="8" autocomplete="new-password" required />
-          <label class="field-label" for="founderSetupCode">رمز التهيئة السري</label>
-          <input class="dialog-input" id="founderSetupCode" type="password" autocomplete="off" required />
-          <button type="submit" class="primary-button auth-submit">إنشاء حساب المؤسس</button>
-        </form>
-        <p class="admin-config-note" id="adminConfigNote" hidden>أضف إعدادات مشروع Firebase إلى firebase-config.js لتفعيل دخول المسؤول.</p>
       </section>
 
       <section class="admin-dashboard" id="adminDashboard" hidden>
         <div class="admin-dashboard-heading">
-          <div><span class="section-kicker">إدارة الجمعية</span><h1>لوحة التحكم</h1><p>إدارة المبادرات والحسابات وطلبات المشاركة.</p></div>
+          <div><span class="section-kicker" id="dashboardRoleLabel">إدارة الجمعية</span><h1>لوحة التحكم</h1><p id="dashboardRoleDescription">إدارة المبادرات والحسابات وطلبات المشاركة.</p></div>
           <div class="admin-session"><span class="admin-session-name" id="adminSessionName"></span><button type="button" id="adminLogoutButton">تسجيل الخروج</button></div>
         </div>
-        <section class="admin-stat-row" aria-label="ملخص إداري">
+        <section class="admin-stat-row" data-role-panel="admin" aria-label="ملخص إداري">
           <article><span>المتطوعون</span><strong id="adminVolunteerCount">0</strong></article>
           <article><span>المبادرات</span><strong id="adminInitiativeCount">0</strong></article>
           <article><span>طلبات المشاركة</span><strong id="adminRequestCount">0</strong></article>
         </section>
-        <section class="admin-grid">
+        <section class="admin-grid" data-role-panel="admin">
           <article class="admin-panel">
             <div class="admin-panel-heading"><div><h2>إضافة مبادرة</h2><p>أضف فرصة لتظهر في الموقع العام.</p></div></div>
             <form id="initiativeForm" class="admin-initiative-form">
@@ -84,16 +71,126 @@
             <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المتطوع</th><th>المبادرة</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody id="participationRows"></tbody></table><p class="admin-empty" id="requestsEmpty">لا توجد طلبات مشاركة بعد.</p></div>
           </article>
         </section>
-        <section class="admin-panel admin-users-panel">
-          <div class="admin-panel-heading"><div><h2>حسابات المستخدمين</h2><p>يُنشأ كل حساب جديد بصلاحية متطوع. لا تغيّر الصلاحيات إلا بعد التحقق من الشخص.</p></div></div>
+        <section class="admin-panel admin-users-panel" data-role-panel="admin">
+          <div class="admin-panel-heading"><div><h2>حسابات المستخدمين</h2><p>اختر رتبة واحدة من الرتب المحددة فقط. حساب المؤسس ثابت ولا يمكن منحه من هذه القائمة، وأي صلاحية غير مذكورة ممنوعة.</p></div></div>
           <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>الاسم</th><th>البريد الإلكتروني</th><th>الصلاحية</th><th>حفظ</th></tr></thead><tbody id="adminUserRows"></tbody></table><p class="admin-empty" id="usersEmpty">لا توجد حسابات متطوعين.</p></div>
         </section>
-        <section class="admin-panel admin-initiatives-panel">
+        <section class="admin-panel admin-initiatives-panel" data-role-panel="admin">
           <div class="admin-panel-heading"><div><h2>المبادرات المنشورة</h2><p>إخفاء المبادرة يوقف ظهورها للزوار.</p></div></div>
           <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المبادرة</th><th>الموعد</th><th>الحالة</th><th>النشر</th></tr></thead><tbody id="adminInitiativeRows"></tbody></table><p class="admin-empty" id="initiativesEmpty">لا توجد مبادرات محفوظة.</p></div>
         </section>
+
+        <section class="role-dashboard-grid" data-role-panel="leader">
+          <article class="admin-panel role-summary-panel">
+            <div class="admin-panel-heading"><div><h2 id="leaderTeamName">فريقي</h2><p id="leaderTeamDescription">بيانات الفريق وأعضاؤه وطلباته.</p></div></div>
+            <div class="role-summary-stats"><span>الأعضاء <strong id="leaderMemberCount">0</strong></span><span>طلبات الانضمام <strong id="leaderJoinRequestCount">0</strong></span></div>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>طلبات الانضمام للفريق</h2><p>طلبات فريقك فقط؛ قبول الطلب يضيف صاحبه إلى الفريق.</p></div></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المتطوع</th><th>تاريخ الطلب</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody id="leaderJoinRequestRows"></tbody></table><p class="admin-empty" id="leaderJoinRequestsEmpty">لا توجد طلبات انضمام.</p></div>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>أعضاء الفريق</h2><p>إضافة مباشرة باستخدام معرّف حساب المتطوع.</p></div></div>
+            <form id="leaderAddMemberForm" class="role-inline-form">
+              <label class="field-label" for="leaderMemberUid">معرّف المتطوع</label>
+              <input class="dialog-input" id="leaderMemberUid" required />
+              <button class="primary-button auth-submit" type="submit">إضافة للفريق</button>
+            </form>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>الاسم</th><th>البريد الإلكتروني</th><th>معرّف الحساب</th></tr></thead><tbody id="leaderMemberRows"></tbody></table><p class="admin-empty" id="leaderMembersEmpty">لا يوجد أعضاء مسجلون في الفريق.</p></div>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>طلب مبادرة تطوعية</h2><p>يرسل الطلب لإدارة العمل التطوعي للمراجعة.</p></div></div>
+            <form id="leaderInitiativeRequestForm" class="role-form-grid">
+              <label class="field-label">اسم المبادرة<input class="dialog-input" name="title" required maxlength="160" /></label>
+              <label class="field-label">الوصف<textarea class="dialog-input" name="description" rows="3" required maxlength="4000"></textarea></label>
+              <label class="field-label">تاريخ التنفيذ<input class="dialog-input" name="date" type="date" required /></label>
+              <label class="field-label">الوقت<input class="dialog-input" name="time" type="time" required /></label>
+              <label class="field-label">الموقع<input class="dialog-input" name="location" required maxlength="300" /></label>
+              <label class="field-label">عدد المتطوعين<input class="dialog-input" name="requiredVolunteers" type="number" min="1" max="10000" required /></label>
+              <label class="field-label">المهام التطوعية<textarea class="dialog-input" name="tasks" rows="3" required maxlength="2000"></textarea></label>
+              <label class="field-label">الساعات التطوعية<input class="dialog-input" name="hours" type="number" min="1" max="24" required /></label>
+              <label class="field-label">رابط خطاب أو مرفق<input class="dialog-input" name="attachmentUrl" type="url" maxlength="1000" /></label>
+              <button class="primary-button auth-submit" type="submit">إرسال الطلب</button>
+            </form>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المبادرة</th><th>الموعد</th><th>الحالة</th><th>ملاحظة المراجعة</th><th>الإجراء</th></tr></thead><tbody id="leaderInitiativeRequestRows"></tbody></table><p class="admin-empty" id="leaderInitiativeRequestsEmpty">لم تُرسل طلبات مبادرات بعد.</p></div>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>مبادرات الفريق</h2><p>ابدأ المبادرة المعتمدة أو أغلقها بعد الانتهاء.</p></div></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المبادرة</th><th>التاريخ</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody id="leaderInitiativesRows"></tbody></table><p class="admin-empty" id="leaderInitiativesEmpty">لا توجد مبادرات مرتبطة بالفريق.</p></div>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>تنبيه أو تحذير</h2><p>يرسل إلى متطوع من أعضاء فريقك.</p></div></div>
+            <form id="leaderNotificationForm" class="role-form-grid">
+              <label class="field-label">المتطوع<select class="dialog-input" name="recipientUid" id="leaderNotificationRecipient" required></select></label>
+              <label class="field-label">النوع<select class="dialog-input" name="type" required><option value="alert">تنبيه</option><option value="warning">تحذير</option></select></label>
+              <label class="field-label">النص<textarea class="dialog-input" name="message" rows="3" maxlength="2000" required></textarea></label>
+              <button class="primary-button auth-submit" type="submit">إرسال</button>
+            </form>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>تقارير الفريق</h2><p>إرسال تقرير عن إحدى مبادرات فريقك.</p></div></div>
+            <form id="leaderReportForm" class="role-form-grid">
+              <label class="field-label">المبادرة<select class="dialog-input" name="initiativeId" id="leaderReportInitiative" required></select></label>
+              <label class="field-label">التقرير<textarea class="dialog-input" name="content" rows="4" maxlength="5000" required></textarea></label>
+              <label class="field-label">رابط مرفق<input class="dialog-input" name="attachmentUrl" type="url" maxlength="1000" /></label>
+              <button class="primary-button auth-submit" type="submit">إرسال التقرير</button>
+            </form>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المبادرة</th><th>الحالة</th><th>ملاحظة المراجعة</th><th>المرفقات</th></tr></thead><tbody id="leaderReportRows"></tbody></table><p class="admin-empty" id="leaderReportsEmpty">لا توجد تقارير.</p></div>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>إصدار شهادة</h2><p>إصدار شهادة لمتطوع في مبادرة فريقك وتسجيل ساعاتها.</p></div></div>
+            <form id="leaderCertificateForm" class="role-form-grid">
+              <label class="field-label">المشارك المعتمد<select class="dialog-input" name="participationRequestId" id="leaderCertificateParticipant" required></select></label>
+              <label class="field-label">الساعات<input class="dialog-input" name="hours" type="number" min="1" max="24" required /></label>
+              <label class="field-label">رقم الشهادة<input class="dialog-input" name="certificateNumber" maxlength="100" /></label>
+              <label class="field-label">رابط الشهادة<input class="dialog-input" name="certificateUrl" type="url" maxlength="1000" /></label>
+              <button class="primary-button auth-submit" type="submit">إصدار الشهادة</button>
+            </form>
+          </article>
+        </section>
+
+        <section class="role-dashboard-grid" data-role-panel="staff">
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>إضافة فريق</h2><p>أدخل معرّف حساب قائد الفريق؛ تعيين رتبته يتم من حساب المؤسس أو الإدارة التنفيذية.</p></div></div>
+            <form id="staffTeamForm" class="role-form-grid">
+              <label class="field-label">اسم الفريق<input class="dialog-input" name="name" required maxlength="160" /></label>
+              <label class="field-label">وصف الفريق<textarea class="dialog-input" name="description" rows="3" maxlength="2000"></textarea></label>
+              <label class="field-label">معرّف حساب القائد<input class="dialog-input" name="leaderUid" required /></label>
+              <button class="primary-button auth-submit" type="submit">إنشاء الفريق</button>
+            </form>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>الفريق</th><th>معرّف الفريق</th><th>القائد (UID)</th><th>الوصف</th><th>الإجراء</th></tr></thead><tbody id="staffTeamRows"></tbody></table><p class="admin-empty" id="staffTeamsEmpty">لا توجد فرق.</p></div>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>مراجعة طلبات المبادرات</h2><p>اعتماد الطلب أو رفضه أو إعادته للتعديل مع توضيح السبب.</p></div></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المبادرة والفريق</th><th>التفاصيل</th><th>مرفقات</th><th>الحالة</th><th>ملاحظة</th><th>القرار</th></tr></thead><tbody id="staffInitiativeRequestRows"></tbody></table><p class="admin-empty" id="staffInitiativeRequestsEmpty">لا توجد طلبات للمراجعة.</p></div>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>مراجعة التقارير</h2><p>مراجعة تقارير الفرق وإعادتها عند الحاجة.</p></div></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>الفريق</th><th>المبادرة</th><th>التقرير</th><th>المرفقات</th><th>الحالة</th><th>ملاحظة</th><th>الإجراء</th></tr></thead><tbody id="staffReportRows"></tbody></table><p class="admin-empty" id="staffReportsEmpty">لا توجد تقارير.</p></div>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>المتطوعون والساعات والشهادات</h2><p>بيانات المتطوعين وسجلات الشهادات والساعات.</p></div></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المتطوع</th><th>البريد</th><th>معرّف الحساب</th><th>الفريق</th><th>الدور</th></tr></thead><tbody id="staffVolunteerRows"></tbody></table><p class="admin-empty" id="staffVolunteersEmpty">لا يوجد متطوعون.</p></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المتطوع</th><th>المبادرة</th><th>الساعات</th><th>الشهادة</th><th>تحديث الساعات</th></tr></thead><tbody id="staffCertificateRows"></tbody></table><p class="admin-empty" id="staffCertificatesEmpty">لا توجد شهادات.</p></div>
+          </article>
+        </section>
+
+        <section class="role-dashboard-grid" data-role-panel="executive">
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>ملخص الأداء العام</h2><p>عرض إجمالي للفرق والمتطوعين والمبادرات والتقارير.</p></div></div>
+            <div class="role-summary-stats"><span>الفرق <strong id="executiveTeamCount">0</strong></span><span>المتطوعون <strong id="executiveVolunteerCount">0</strong></span><span>المبادرات <strong id="executiveInitiativeCount">0</strong></span><span>التقارير <strong id="executiveReportCount">0</strong></span></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>الفريق</th><th>القائد</th><th>عدد الأعضاء</th></tr></thead><tbody id="executiveTeamRows"></tbody></table></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المبادرة</th><th>الفريق</th><th>المشاركون</th><th>الحالة</th><th>تاريخ التنفيذ</th><th>المرفقات</th></tr></thead><tbody id="executiveInitiativeRows"></tbody></table></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>طلب المبادرة</th><th>الفريق</th><th>الحالة</th><th>الملاحظة</th><th>المرفقات</th></tr></thead><tbody id="executiveInitiativeRequestRows"></tbody></table></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>الفريق</th><th>المبادرة</th><th>التقرير</th><th>المرفقات</th><th>الحالة</th></tr></thead><tbody id="executiveReportRows"></tbody></table></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>المتطوع</th><th>المبادرة</th><th>الساعات التطوعية</th><th>رقم الشهادة</th></tr></thead><tbody id="executiveCertificateRows"></tbody></table></div>
+          </article>
+          <article class="admin-panel">
+            <div class="admin-panel-heading"><div><h2>إدارة رتب المستخدمين</h2><p>تعديل الرتب المحددة فقط. رتبة المؤسس غير متاحة ولا يمكن إنشاؤها.</p></div></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>الاسم</th><th>البريد</th><th>معرّف الحساب</th><th>الفريق</th><th>الرتبة</th><th>حفظ</th></tr></thead><tbody id="executiveUserRows"></tbody></table><p class="admin-empty" id="executiveUsersEmpty">لا يوجد مستخدمون.</p></div>
+          </article>
+        </section>
       </section>
-      <p class="admin-page-footer">إدارة الصلاحيات محمية بقواعد Firestore المنشورة للمشروع.</p>
     </main>
     <div class="toast" id="adminToast" role="status" aria-live="polite"></div>
   </body>
