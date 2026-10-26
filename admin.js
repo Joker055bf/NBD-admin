@@ -14,8 +14,34 @@ let leaderTeam = null;
 let leaderMembers = [];
 let leaderInitiatives = [];
 let leaderParticipants = [];
+let leaderCertificates = [];
+let staffTeams = [];
+let staffVolunteers = [];
+let staffInitiatives = [];
+let editingStaffTeam = null;
 let editingInitiativeRequestId = null;
 let toastTimer;
+
+document.querySelectorAll(".admin-empty").forEach((element) => {
+  element.hidden = true;
+});
+
+function labelAdminTableCells() {
+  document.querySelectorAll(".admin-table").forEach((table) => {
+    const labels = [...table.querySelectorAll("thead th")].map((heading) => heading.textContent.trim());
+    table.querySelectorAll("tbody tr").forEach((row) => {
+      [...row.cells].forEach((cell, index) => {
+        if (labels[index]) cell.dataset.label = labels[index];
+      });
+    });
+  });
+}
+
+const adminTableObserver = new MutationObserver(labelAdminTableCells);
+document.querySelectorAll(".admin-table tbody").forEach((body) => {
+  adminTableObserver.observe(body, { childList: true });
+});
+labelAdminTableCells();
 
 const roleLabels = {
   admin: "المؤسس",
@@ -30,6 +56,13 @@ const roleDescriptions = {
   staff: "إدارة الفرق ومراجعة المبادرات والتقارير والساعات.",
   executive: "متابعة الأداء العام وإدارة رتب المستخدمين المحددة."
 };
+
+function showToast(message) {
+  toast.textContent = message;
+  toast.classList.add("show");
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toast.classList.remove("show"), 4000);
+}
 
 const adminNavigationTargets = {
   admin: {
@@ -54,39 +87,47 @@ const adminNavigationTargets = {
     certificates: "#staffCertificatesPanel"
   },
   executive: {
-    initiatives: "#executiveOverviewPanel",
-    teams: "#executiveOverviewPanel",
-    requests: "#executiveOverviewPanel",
-    reports: "#executiveOverviewPanel",
-    certificates: "#executiveOverviewPanel"
+    initiatives: "#executiveInitiativeRows",
+    teams: "#executiveTeamRows",
+    requests: "#executiveInitiativeRequestRows",
+    reports: "#executiveReportRows",
+    certificates: "#executiveCertificateRows"
   }
 };
-
-function showToast(message) {
-  toast.textContent = message;
-  toast.classList.add("show");
-  window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toast.classList.remove("show"), 4000);
-}
 
 function closeAdminMenu() {
   const menu = document.getElementById("adminQuickMenu");
   const toggle = document.getElementById("adminMenuToggle");
-  menu.hidden = true;
+  menu.classList.remove("is-open");
   toggle.setAttribute("aria-expanded", "false");
 }
 
 document.getElementById("adminMenuToggle").addEventListener("click", () => {
   const menu = document.getElementById("adminQuickMenu");
   const toggle = document.getElementById("adminMenuToggle");
-  menu.hidden = !menu.hidden;
-  toggle.setAttribute("aria-expanded", String(!menu.hidden));
+  const opening = !menu.classList.contains("is-open");
+  menu.classList.toggle("is-open", opening);
+  toggle.setAttribute("aria-expanded", String(opening));
 });
+
+function renderAdminNav() {
+  const menu = document.getElementById("adminQuickMenu");
+  menu.querySelectorAll("[data-admin-section]").forEach((button) => {
+    const section = button.dataset.adminSection;
+    button.hidden = !(section === "home"
+      || section === "profile"
+      || Boolean(adminNavigationTargets[currentRole]?.[section]));
+    button.classList.toggle("active", section === "home");
+  });
+}
 
 document.getElementById("adminQuickMenu").addEventListener("click", (event) => {
   const button = event.target.closest("[data-admin-section]");
   if (!button) return;
   const section = button.dataset.adminSection;
+  document.querySelectorAll("#adminQuickMenu [data-admin-section]").forEach((item) => {
+    item.classList.toggle("active", item === button);
+  });
   const profilePanel = document.getElementById("adminProfilePanel");
   if (section === "profile") {
     profilePanel.hidden = false;
@@ -283,6 +324,7 @@ async function verifyAdmin(user) {
       ? !allowedRoles.some((role) => ["admin", "staff", "executive"].includes(role))
       : !allowedRoles.includes(currentRole);
   });
+  renderAdminNav();
   loginPanel.hidden = true;
   dashboard.hidden = false;
   await loadDashboard();
@@ -309,6 +351,8 @@ async function verifyAdmin(user) {
 
 document.getElementById("adminLoginForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
   if (!firebaseReady) {
     showToast("أضف إعدادات Firebase إلى firebase-config.js أولًا.");
     return;
@@ -319,6 +363,8 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (even
     showToast("أدخل اسم المستخدم وكلمة المرور.");
     return;
   }
+  button.disabled = true;
+  button.textContent = "جارٍ التحقق من الحساب...";
   try {
     const email = username.includes("@")
       ? username
@@ -326,6 +372,9 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (even
     await auth.signInWithEmailAndPassword(email, password);
   } catch (error) {
     showToast(errorMessage(error));
+  } finally {
+    button.disabled = false;
+    button.textContent = "دخول لوحة التحكم";
   }
 });
 
@@ -365,22 +414,23 @@ async function loadDashboard() {
 }
 
 async function loadFounderDashboard() {
-  const [volunteersSnapshot, administratorsSnapshot, initiativesSnapshot, requestsSnapshot] = await Promise.all([
+  const [volunteersSnapshot, administratorsSnapshot, initiativesSnapshot, requestsSnapshot, teamsSnapshot] = await Promise.all([
     db.collection("volunteers").get(),
     db.collection("adminAccounts").get(),
     db.collection("initiatives").orderBy("date", "desc").get(),
-    db.collection("participationRequests").orderBy("createdAt", "desc").get()
+    db.collection("participationRequests").orderBy("createdAt", "desc").get(),
+    db.collection("teams").orderBy("name").get()
   ]);
   document.getElementById("adminVolunteerCount").textContent = String(volunteersSnapshot.size);
   document.getElementById("adminInitiativeCount").textContent = String(initiativesSnapshot.size);
   document.getElementById("adminRequestCount").textContent = String(
     requestsSnapshot.docs.filter((item) => item.data().status === "pending").length
   );
-  renderUsers(volunteersSnapshot.docs, administratorsSnapshot.docs);
+  renderUsers(volunteersSnapshot.docs, administratorsSnapshot.docs, teamsSnapshot.docs);
   renderInitiatives(initiativesSnapshot.docs);
   renderRequests(requestsSnapshot.docs);
 }
-function renderUsers(volunteers, administrators) {
+function renderUsers(volunteers, administrators, teams) {
   const rows = document.getElementById("adminUserRows");
   rows.replaceChildren();
   const accounts = [
@@ -423,17 +473,26 @@ function renderUsers(volunteers, administrators) {
       role.append(option);
     });
     roleCell.append(role);
-    const teamId = document.createElement("input");
-    teamId.className = "dialog-input";
-    teamId.type = "text";
-    teamId.value = user.teamId || "";
-    teamId.placeholder = "معرّف الفريق لقائد الفريق";
-    teamId.setAttribute("aria-label", `معرّف فريق ${user.displayName || user.email}`);
-    teamId.hidden = user.role !== "leader";
-    role.addEventListener("change", () => {
-      teamId.hidden = role.value !== "leader";
+    const teamSelect = document.createElement("select");
+    teamSelect.className = "dialog-input leader-team-select";
+    teamSelect.setAttribute("aria-label", `فريق ${user.displayName || user.email}`);
+    const emptyTeamOption = document.createElement("option");
+    emptyTeamOption.value = "";
+    emptyTeamOption.textContent = teams.length ? "اختر الفريق" : "لا توجد فرق";
+    teamSelect.append(emptyTeamOption);
+    teams.forEach((team) => {
+      const option = document.createElement("option");
+      option.value = team.id;
+      option.textContent = team.data().name || "فريق";
+      option.selected = user.teamId === team.id;
+      teamSelect.append(option);
     });
-    roleCell.append(teamId);
+    teamSelect.hidden = user.role !== "leader";
+    teamSelect.disabled = teams.length === 0;
+    role.addEventListener("change", () => {
+      teamSelect.hidden = role.value !== "leader";
+    });
+    roleCell.append(teamSelect);
     const actionCell = document.createElement("td");
     const save = document.createElement("button");
     save.type = "button";
@@ -444,11 +503,13 @@ function renderUsers(volunteers, administrators) {
         const newRole = role.value;
         const changes = { role: newRole };
         if (newRole === "leader") {
-          if (!teamId.value.trim()) {
-            showToast("اربط قائد الفريق بمعرّف فريق موجود قبل حفظ الرتبة.");
+          if (!teamSelect.value) {
+            showToast(teams.length
+              ? "اختر فريقًا موجودًا قبل حفظ رتبة قائد الفريق."
+              : "لا توجد فرق بعد. أنشئ فريقًا من قسم الفرق أولًا.");
             return;
           }
-          changes.teamId = teamId.value.trim();
+          changes.teamId = teamSelect.value;
         } else if (user.teamId) {
           changes.teamId = firebase.firestore.FieldValue.delete();
         }
@@ -510,7 +571,7 @@ function renderRequests(requests) {
     const initiative = document.createElement("td");
     initiative.textContent = request.initiativeName || "مبادرة";
     const status = document.createElement("td");
-    status.textContent = request.status === "pending" ? "قيد المراجعة" : request.status === "accepted" ? "مقبول" : "مرفوض";
+    status.append(statusPill(request.status));
     const action = document.createElement("td");
     if (request.status === "pending") {
       const select = document.createElement("select");
@@ -549,6 +610,38 @@ function rowCell(row, value) {
   cell.textContent = value == null || value === "" ? "—" : String(value);
   row.append(cell);
   return cell;
+}
+
+function stackedCell(row, primary, secondary) {
+  const cell = document.createElement("td");
+  const heading = document.createElement("span");
+  heading.className = "cell-primary";
+  heading.textContent = primary || "—";
+  cell.append(heading);
+  if (secondary) {
+    const sub = document.createElement("span");
+    sub.className = "cell-secondary";
+    sub.textContent = secondary;
+    cell.append(sub);
+  }
+  row.append(cell);
+  return cell;
+}
+
+function profileLabel(documents, uid) {
+  const profile = documents.find((item) => item.id === uid);
+  if (!profile) return "—";
+  return profile.data().displayName || profile.data().email || "—";
+}
+
+function teamLabel(documents, teamId) {
+  const team = documents.find((item) => item.id === teamId);
+  return team ? team.data().name || "فريق" : "—";
+}
+
+function initiativeLabel(documents, initiativeId) {
+  const initiative = documents.find((item) => item.id === initiativeId);
+  return initiative ? initiative.data().title || "مبادرة" : "—";
 }
 
 function appendAttachmentLinks(cell, urls) {
@@ -590,7 +683,12 @@ function setSelectOptions(select, items, emptyLabel) {
 
 function timestampLabel(value) {
   if (!value || typeof value.toDate !== "function") return "—";
-  return value.toDate().toLocaleDateString("ar-SA");
+  return value.toDate().toLocaleDateString("ar-SA-u-nu-latn", {
+    calendar: "gregory",
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  });
 }
 
 function roleStatusLabel(status) {
@@ -608,6 +706,20 @@ function roleStatusLabel(status) {
   })[status] || status || "—";
 }
 
+function statusPill(status) {
+  const pill = document.createElement("span");
+  pill.className = `status-pill status-${status || "default"}`;
+  pill.textContent = roleStatusLabel(status);
+  return pill;
+}
+
+function statusCell(row, status) {
+  const cell = document.createElement("td");
+  cell.append(statusPill(status));
+  row.append(cell);
+  return cell;
+}
+
 async function loadLeaderDashboard() {
   const teamId = signedInProfile.teamId;
   if (!teamId) {
@@ -620,15 +732,17 @@ async function loadLeaderDashboard() {
     return;
   }
   leaderTeam = { id: teamId, ...teamSnapshot.data() };
-  const [members, joinRequests, initiativeRequests, initiatives, reports] = await Promise.all([
+  const [members, joinRequests, initiativeRequests, initiatives, reports, certificates] = await Promise.all([
     db.collection("volunteers").where("teamId", "==", teamId).get(),
     db.collection("teamJoinRequests").where("teamId", "==", teamId).get(),
     db.collection("initiativeRequests").where("leaderUid", "==", signedInAdmin.uid).get(),
     db.collection("initiatives").where("teamId", "==", teamId).get(),
-    db.collection("reports").where("teamId", "==", teamId).get()
+    db.collection("reports").where("teamId", "==", teamId).get(),
+    db.collection("certificates").where("teamId", "==", teamId).get()
   ]);
   leaderMembers = members.docs;
   leaderInitiatives = initiatives.docs;
+  leaderCertificates = certificates.docs;
   const acceptedParticipationRequests = await Promise.all(initiatives.docs.map((initiative) =>
     db.collection("participationRequests")
       .where("initiativeId", "==", initiative.id)
@@ -649,16 +763,26 @@ async function loadLeaderDashboard() {
   renderLeaderInitiativeRequests(initiativeRequests.docs);
   renderLeaderInitiatives(initiatives.docs);
   renderLeaderReports(reports.docs);
-  const participantOptions = leaderParticipants.map((request) => ({
-    id: request.id,
-    label: `${request.data().volunteerName || request.data().volunteerEmail} — ${
-      initiatives.docs.find((item) => item.id === request.data().initiativeId)?.data().title || "مبادرة"
-    }`
-  }));
+  const issuedParticipationIds = new Set(
+    certificates.docs
+      .map((document) => document.data().participationRequestId)
+      .filter(Boolean)
+  );
+  const participantOptions = leaderParticipants
+    .filter((request) => !issuedParticipationIds.has(request.id))
+    .map((request) => ({
+      id: request.id,
+      label: `${request.data().volunteerName || request.data().volunteerEmail} — ${
+        initiatives.docs.find((item) => item.id === request.data().initiativeId)?.data().title || "مبادرة"
+      }`
+    }));
   const memberOptions = members.docs.map((member) => ({ id: member.id, label: member.data().displayName || member.data().email || member.id }));
   const initiativeOptions = initiatives.docs.map((item) => ({ id: item.id, label: item.data().title || item.id }));
+  const certificateEmptyLabel = leaderParticipants.length && participantOptions.length === 0
+    ? "صدرت شهادات لجميع المشاركين المعتمدين"
+    : "اختر مشاركًا معتمدًا";
   setSelectOptions(document.getElementById("leaderNotificationRecipient"), memberOptions, "اختر متطوعًا");
-  setSelectOptions(document.getElementById("leaderCertificateParticipant"), participantOptions, "اختر مشاركًا معتمدًا");
+  setSelectOptions(document.getElementById("leaderCertificateParticipant"), participantOptions, certificateEmptyLabel);
   setSelectOptions(document.getElementById("leaderReportInitiative"), initiativeOptions, "اختر مبادرة");
 }
 
@@ -685,7 +809,7 @@ function renderLeaderJoinRequests(requests) {
     const row = document.createElement("tr");
     rowCell(row, request.volunteerName);
     rowCell(row, timestampLabel(request.createdAt));
-    rowCell(row, roleStatusLabel(request.status));
+    statusCell(row, request.status);
     const action = document.createElement("td");
     if (request.status === "pending") {
       [["accepted", "قبول"], ["rejected", "رفض"]].forEach(([status, label]) => {
@@ -693,6 +817,7 @@ function renderLeaderJoinRequests(requests) {
         button.type = "button";
         button.className = "role-save-button";
         button.textContent = label;
+        button.classList.add(status === "rejected" ? "is-danger" : "is-positive");
         button.addEventListener("click", () => decideTeamJoinRequest(item, status));
         action.append(button);
       });
@@ -729,13 +854,13 @@ function renderLeaderInitiativeRequests(requests) {
     const row = document.createElement("tr");
     rowCell(row, request.title);
     rowCell(row, `${request.date || "—"} ${request.time || ""}`);
-    rowCell(row, roleStatusLabel(request.status));
+    statusCell(row, request.status);
     rowCell(row, request.reviewNote);
     const action = document.createElement("td");
     if (request.status === "revision_requested") {
       const edit = document.createElement("button");
       edit.type = "button";
-      edit.className = "role-save-button";
+      edit.className = "role-save-button is-warning";
       edit.textContent = "تعديل وإعادة الإرسال";
       edit.addEventListener("click", () => prepareInitiativeRevision(item));
       action.append(edit);
@@ -769,7 +894,7 @@ function renderLeaderInitiatives(initiatives) {
     const row = document.createElement("tr");
     rowCell(row, initiative.title);
     rowCell(row, initiative.date);
-    rowCell(row, roleStatusLabel(initiative.status));
+    statusCell(row, initiative.status);
     const action = document.createElement("td");
     let nextStatus = null;
     let label = "";
@@ -785,6 +910,7 @@ function renderLeaderInitiatives(initiatives) {
       button.type = "button";
       button.className = "role-save-button";
       button.textContent = label;
+      button.classList.add(nextStatus === "open" ? "is-positive" : "is-warning");
       button.addEventListener("click", async () => {
         try {
           await item.ref.update({
@@ -814,8 +940,8 @@ function renderLeaderReports(reports) {
     const report = item.data();
     const initiative = leaderInitiatives.find((entry) => entry.id === report.initiativeId);
     const row = document.createElement("tr");
-    rowCell(row, initiative ? initiative.data().title : report.initiativeId);
-    rowCell(row, roleStatusLabel(report.status));
+    rowCell(row, initiative ? initiative.data().title : "مبادرة غير متاحة");
+    statusCell(row, report.status);
     rowCell(row, report.reviewNote);
     const attachments = document.createElement("td");
     appendAttachmentLinks(attachments, report.attachments);
@@ -833,7 +959,17 @@ async function loadStaffDashboard() {
     db.collection("certificates").orderBy("createdAt", "desc").get(),
     db.collection("initiatives").get()
   ]);
+  staffTeams = teams.docs;
+  staffVolunteers = volunteers.docs;
   staffInitiatives = initiatives.docs;
+  setSelectOptions(
+    document.getElementById("staffTeamLeader"),
+    staffVolunteers.map((item) => ({
+      id: item.id,
+      label: item.data().displayName || item.data().email || item.id
+    })),
+    "اختر قائد الفريق"
+  );
   renderStaffTeams(teams.docs);
   renderStaffInitiativeRequests(requests.docs);
   renderStaffReports(reports.docs);
@@ -849,37 +985,102 @@ function renderStaffTeams(teams) {
     const team = item.data();
     const row = document.createElement("tr");
     rowCell(row, team.name);
-    rowCell(row, team.leaderUid);
+    rowCell(row, team.leaderUid ? profileLabel(staffVolunteers, team.leaderUid) : "بدون قائد");
     rowCell(row, team.description);
     const action = document.createElement("td");
     const edit = document.createElement("button");
     edit.type = "button";
     edit.className = "role-save-button";
     edit.textContent = "تعديل";
-    edit.addEventListener("click", async () => {
-      const name = window.prompt("اسم الفريق", team.name || "");
-      if (name === null) return;
-      const leaderUid = window.prompt("معرّف حساب القائد", team.leaderUid || "");
-      if (leaderUid === null) return;
-      const description = window.prompt("وصف الفريق", team.description || "");
-      if (description === null) return;
-      try {
-        await item.ref.update({
-          name: name.trim(),
-          leaderUid: leaderUid.trim(),
-          description: description.trim()
-        });
-        showToast("تم تحديث بيانات الفريق.");
-        await loadStaffDashboard();
-      } catch (error) {
-        showToast(errorMessage(error));
-      }
-    });
+    edit.addEventListener("click", () => openStaffTeamDialog(item));
     action.append(edit);
     row.append(action);
     rows.append(row);
   });
 }
+
+function openStaffTeamDialog(item) {
+  const team = item.data();
+  editingStaffTeam = item;
+  const dialog = document.getElementById("staffTeamDialog");
+  const form = document.getElementById("staffTeamEditForm");
+  form.elements.name.value = team.name || "";
+  form.elements.description.value = team.description || "";
+  const leaderSelect = form.elements.leaderUid;
+  leaderSelect.replaceChildren();
+  if (!team.leaderUid) {
+    const noLeaderOption = document.createElement("option");
+    noLeaderOption.value = "";
+    noLeaderOption.textContent = "بدون قائد حاليًا";
+    noLeaderOption.disabled = true;
+    noLeaderOption.selected = true;
+    leaderSelect.append(noLeaderOption);
+  }
+  if (currentRole === "admin") {
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = "بدون قائد";
+    leaderSelect.append(emptyOption);
+  }
+  staffVolunteers.forEach((member) => {
+    const option = document.createElement("option");
+    option.value = member.id;
+    option.textContent = member.data().displayName || member.data().email || member.id;
+    leaderSelect.append(option);
+  });
+  if (team.leaderUid && !staffVolunteers.some((member) => member.id === team.leaderUid)) {
+    const currentLeader = document.createElement("option");
+    currentLeader.value = team.leaderUid;
+    currentLeader.textContent = "الحساب المرتبط حاليًا (غير مسجل في قائمة المتطوعين)";
+    leaderSelect.append(currentLeader);
+  }
+  leaderSelect.value = team.leaderUid || "";
+  leaderSelect.disabled = leaderSelect.options.length <= 1 && !team.leaderUid;
+  dialog.showModal();
+}
+
+const staffTeamDialog = document.getElementById("staffTeamDialog");
+document.querySelectorAll("[data-team-dialog-close]").forEach((button) => {
+  button.addEventListener("click", () => staffTeamDialog.close());
+});
+staffTeamDialog.addEventListener("click", (event) => {
+  if (event.target === staffTeamDialog) staffTeamDialog.close();
+});
+staffTeamDialog.addEventListener("close", () => {
+  editingStaffTeam = null;
+});
+
+document.getElementById("staffTeamEditForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!editingStaffTeam) return;
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const name = form.elements.name.value.trim();
+  if (name.length < 2) {
+    showToast("اسم الفريق قصير جدًا.");
+    return;
+  }
+  const leaderUid = form.elements.leaderUid.value;
+  if (!leaderUid && currentRole !== "admin" && editingStaffTeam.data().leaderUid) {
+    showToast("لا يمكن إزالة قائد الفريق. اختر قائدًا بديلًا.");
+    return;
+  }
+  button.disabled = true;
+  try {
+    await editingStaffTeam.ref.update({
+      name,
+      leaderUid,
+      description: form.elements.description.value.trim()
+    });
+    staffTeamDialog.close();
+    showToast("تم تحديث بيانات الفريق.");
+    await loadStaffDashboard();
+  } catch (error) {
+    showToast(errorMessage(error));
+  } finally {
+    button.disabled = false;
+  }
+});
 
 function renderStaffInitiativeRequests(requests) {
   const rows = document.getElementById("staffInitiativeRequestRows");
@@ -888,14 +1089,22 @@ function renderStaffInitiativeRequests(requests) {
   requests.forEach((item) => {
     const request = item.data();
     const row = document.createElement("tr");
-    const summary = document.createElement("td");
-    summary.textContent = `${request.title || "مبادرة"} — ${request.teamName || request.teamId}`;
-    row.append(summary);
-    rowCell(row, `${request.date || "—"} ${request.time || ""}\n${request.location || ""}`);
+    stackedCell(
+      row,
+      request.title || "مبادرة",
+      request.teamName || teamLabel(staffTeams, request.teamId)
+    );
+    const schedule = [request.date, request.time].filter(Boolean).join(" · ");
+    const details = [
+      request.location,
+      request.requiredVolunteers ? `${request.requiredVolunteers} متطوع` : "",
+      request.hours ? `${request.hours} ساعة` : ""
+    ].filter(Boolean).join(" · ");
+    stackedCell(row, schedule, details);
     const attachmentCell = document.createElement("td");
     appendAttachmentLinks(attachmentCell, request.attachments);
     row.append(attachmentCell);
-    rowCell(row, roleStatusLabel(request.status));
+    statusCell(row, request.status);
     const noteCell = document.createElement("td");
     const note = document.createElement("input");
     note.className = "dialog-input";
@@ -911,6 +1120,7 @@ function renderStaffInitiativeRequests(requests) {
         button.type = "button";
         button.className = "role-save-button";
         button.textContent = label;
+        button.classList.add(status === "rejected" ? "is-danger" : status === "approved" ? "is-positive" : "is-warning");
         button.addEventListener("click", () => reviewInitiativeRequest(item, status, note.value));
         action.append(button);
       });
@@ -933,8 +1143,6 @@ function renderStaffInitiativeRequests(requests) {
     rows.append(row);
   });
 }
-
-let staffInitiatives = [];
 
 async function reviewInitiativeRequest(item, status, reviewNote) {
   try {
@@ -993,18 +1201,19 @@ function renderStaffReports(reports) {
   reports.forEach((item) => {
     const report = item.data();
     const row = document.createElement("tr");
-    rowCell(row, report.teamId);
-    rowCell(row, report.initiativeId);
+    rowCell(row, teamLabel(staffTeams, report.teamId));
+    rowCell(row, initiativeLabel(staffInitiatives, report.initiativeId));
     rowCell(row, report.content);
     const attachments = document.createElement("td");
     appendAttachmentLinks(attachments, report.attachments);
     row.append(attachments);
-    rowCell(row, roleStatusLabel(report.status));
+    statusCell(row, report.status);
     const noteCell = document.createElement("td");
     const note = document.createElement("input");
     note.className = "dialog-input";
     note.value = report.reviewNote || "";
     note.maxLength = 2000;
+    note.setAttribute("aria-label", "ملاحظة مراجعة التقرير");
     noteCell.append(note);
     row.append(noteCell);
     const action = document.createElement("td");
@@ -1014,6 +1223,7 @@ function renderStaffReports(reports) {
         button.type = "button";
         button.className = "role-save-button";
         button.textContent = label;
+        button.classList.add(status === "reviewed" ? "is-positive" : "is-warning");
         button.addEventListener("click", async () => {
           try {
             await item.ref.update({
@@ -1048,7 +1258,7 @@ function renderStaffVolunteers(volunteers) {
     rowCell(row, user.displayName);
     rowCell(row, user.email);
     rowCell(row, item.id);
-    rowCell(row, user.teamId);
+    rowCell(row, user.teamId ? teamLabel(staffTeams, user.teamId) : "بدون فريق");
     rowCell(row, roleLabels[user.role] || "متطوع");
     rows.append(row);
   });
@@ -1061,10 +1271,22 @@ function renderStaffCertificates(certificates) {
   certificates.forEach((item) => {
     const certificate = item.data();
     const row = document.createElement("tr");
-    rowCell(row, certificate.volunteerUid);
-    rowCell(row, certificate.initiativeId);
+    rowCell(row, profileLabel(staffVolunteers, certificate.volunteerUid));
+    rowCell(row, initiativeLabel(staffInitiatives, certificate.initiativeId));
     rowCell(row, certificate.hours);
-    rowCell(row, certificate.certificateNumber || certificate.certificateUrl);
+    const certificateCell = document.createElement("td");
+    if (certificate.certificateNumber) certificateCell.textContent = certificate.certificateNumber;
+    if (typeof certificate.certificateUrl === "string" && /^https:\/\//i.test(certificate.certificateUrl)) {
+      const link = document.createElement("a");
+      link.href = certificate.certificateUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = certificate.certificateNumber ? "عرض" : "رابط الشهادة";
+      if (certificateCell.textContent) certificateCell.append(document.createTextNode(" · "));
+      certificateCell.append(link);
+    }
+    if (!certificateCell.textContent && !certificateCell.childElementCount) certificateCell.textContent = "—";
+    row.append(certificateCell);
     const action = document.createElement("td");
     const hours = document.createElement("input");
     hours.className = "dialog-input";
@@ -1112,10 +1334,10 @@ async function loadExecutiveDashboard() {
   document.getElementById("executiveInitiativeCount").textContent = String(initiatives.size);
   document.getElementById("executiveReportCount").textContent = String(reports.size);
   renderExecutiveTeams(teams.docs, volunteers.docs);
-  renderExecutiveInitiatives(initiatives.docs, participationRequests.docs);
-  renderExecutiveReports(reports.docs);
+  renderExecutiveInitiatives(initiatives.docs, participationRequests.docs, teams.docs);
+  renderExecutiveReports(reports.docs, teams.docs, initiatives.docs);
   renderExecutiveCertificates(certificates.docs, volunteers.docs, initiatives.docs);
-  renderExecutiveInitiativeRequests(initiativeRequests.docs);
+  renderExecutiveInitiativeRequests(initiativeRequests.docs, teams.docs);
   renderExecutiveUsers(volunteers.docs, teams.docs);
 }
 
@@ -1131,23 +1353,23 @@ function renderExecutiveTeams(teams, volunteers) {
     const team = item.data();
     const row = document.createElement("tr");
     rowCell(row, team.name);
-    rowCell(row, team.leaderUid);
+    rowCell(row, team.leaderUid ? profileLabel(volunteers, team.leaderUid) : "بدون قائد");
     rowCell(row, countByTeam.get(item.id) || 0);
     rows.append(row);
   });
 }
 
-function renderExecutiveInitiatives(initiatives, participationRequests) {
+function renderExecutiveInitiatives(initiatives, participationRequests, teams) {
   const rows = document.getElementById("executiveInitiativeRows");
   rows.replaceChildren();
   initiatives.forEach((item) => {
     const initiative = item.data();
     const row = document.createElement("tr");
     rowCell(row, initiative.title);
-    rowCell(row, initiative.teamName || initiative.teamId);
+    rowCell(row, initiative.teamName || teamLabel(teams, initiative.teamId));
     rowCell(row, participationRequests.filter((request) => request.data().initiativeId === item.id
       && request.data().status === "accepted").length);
-    rowCell(row, roleStatusLabel(initiative.status));
+    statusCell(row, initiative.status);
     rowCell(row, initiative.date);
     const attachments = document.createElement("td");
     appendAttachmentLinks(attachments, initiative.attachments);
@@ -1164,8 +1386,8 @@ function renderExecutiveCertificates(certificates, volunteers, initiatives) {
     const volunteer = volunteers.find((profile) => profile.id === certificate.volunteerUid);
     const initiative = initiatives.find((entry) => entry.id === certificate.initiativeId);
     const row = document.createElement("tr");
-    rowCell(row, volunteer?.data().displayName || certificate.volunteerUid);
-    rowCell(row, initiative?.data().title || certificate.initiativeId);
+    rowCell(row, volunteer?.data().displayName || "مستخدم غير متاح");
+    rowCell(row, initiative?.data().title || "مبادرة غير متاحة");
     rowCell(row, certificate.hours);
     const certificateCell = rowCell(row, certificate.certificateNumber);
     if (typeof certificate.certificateUrl === "string" && /^https:\/\//i.test(certificate.certificateUrl)) {
@@ -1180,32 +1402,32 @@ function renderExecutiveCertificates(certificates, volunteers, initiatives) {
   });
 }
 
-function renderExecutiveReports(reports) {
+function renderExecutiveReports(reports, teams, initiatives) {
   const rows = document.getElementById("executiveReportRows");
   rows.replaceChildren();
   reports.forEach((item) => {
     const report = item.data();
     const row = document.createElement("tr");
-    rowCell(row, report.teamId);
-    rowCell(row, report.initiativeId);
+    rowCell(row, teamLabel(teams, report.teamId));
+    rowCell(row, initiativeLabel(initiatives, report.initiativeId));
     rowCell(row, report.content);
     const attachments = document.createElement("td");
     appendAttachmentLinks(attachments, report.attachments);
     row.append(attachments);
-    rowCell(row, roleStatusLabel(report.status));
+    statusCell(row, report.status);
     rows.append(row);
   });
 }
 
-function renderExecutiveInitiativeRequests(requests) {
+function renderExecutiveInitiativeRequests(requests, teams) {
   const rows = document.getElementById("executiveInitiativeRequestRows");
   rows.replaceChildren();
   requests.forEach((item) => {
     const request = item.data();
     const row = document.createElement("tr");
     rowCell(row, request.title);
-    rowCell(row, request.teamName || request.teamId);
-    rowCell(row, roleStatusLabel(request.status));
+    rowCell(row, request.teamName || teamLabel(teams, request.teamId));
+    statusCell(row, request.status);
     rowCell(row, request.reviewNote);
     const attachments = document.createElement("td");
     appendAttachmentLinks(attachments, request.attachments);
@@ -1541,6 +1763,11 @@ document.getElementById("leaderCertificateForm").addEventListener("submit", asyn
     showToast("اختر مشاركًا معتمدًا من القائمة.");
     return;
   }
+  if (leaderCertificates.some((document) => document.data().participationRequestId === participationRequest.id)) {
+    showToast("تم إصدار شهادة لهذا المشارك مسبقًا.");
+    await loadLeaderDashboard();
+    return;
+  }
   const participantData = participationRequest.data();
   const certificate = {
     teamId: leaderTeam.id,
@@ -1558,9 +1785,19 @@ document.getElementById("leaderCertificateForm").addEventListener("submit", asyn
   const button = form.querySelector("button[type=submit]");
   button.disabled = true;
   try {
+    const existingCertificate = await db.collection("certificates")
+      .where("participationRequestId", "==", participationRequest.id)
+      .limit(1)
+      .get();
+    if (!existingCertificate.empty) {
+      showToast("تم إصدار شهادة لهذا المشارك مسبقًا.");
+      await loadLeaderDashboard();
+      return;
+    }
     await db.collection("certificates").add(certificate);
     form.reset();
     showToast("تم إصدار الشهادة وتسجيل الساعات.");
+    await loadLeaderDashboard();
   } catch (error) {
     showToast(errorMessage(error));
   } finally {
@@ -1572,17 +1809,27 @@ document.getElementById("staffTeamForm").addEventListener("submit", async (event
   event.preventDefault();
   const form = event.currentTarget;
   const data = new FormData(form);
+  const name = String(data.get("name") || "").trim();
+  const leaderUid = String(data.get("leaderUid") || "").trim();
+  if (!name) {
+    showToast("أدخل اسم الفريق.");
+    return;
+  }
+  if (!leaderUid) {
+    showToast("اختر قائد الفريق من القائمة.");
+    return;
+  }
   const button = form.querySelector("button[type=submit]");
   button.disabled = true;
   try {
     const team = {
-      name: String(data.get("name")).trim(),
-      leaderUid: String(data.get("leaderUid")).trim(),
+      name,
+      leaderUid,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
     const description = String(data.get("description")).trim();
     if (description) team.description = description;
-    const reference = await db.collection("teams").add(team);
+    await db.collection("teams").add(team);
     form.reset();
     showToast(`تم إنشاء فريق «${team.name}» بنجاح.`);
     await loadStaffDashboard();

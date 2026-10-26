@@ -42,7 +42,9 @@ recoveryForm.addEventListener("submit", async (event) => {
   const input = document.getElementById("recoveryUsername");
   const username = input.value.trim();
   const button = recoveryForm.querySelector("button[type=submit]");
+  const idleLabel = button.textContent;
   button.disabled = true;
+  button.textContent = "جارٍ إرسال الرابط...";
   showRecoveryFeedback("");
   try {
     const functions = firebase.app().functions("us-central1");
@@ -62,5 +64,6 @@ recoveryForm.addEventListener("submit", async (event) => {
     }
   } finally {
     button.disabled = false;
+    button.textContent = idleLabel;
   }
 });

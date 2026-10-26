@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f7f8f5" />
     <title>استعادة بيانات الدخول | منصة الوحدة التطوعية</title>
+    <link rel="icon" type="image/png" href="favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="admin-theme.css" />
     <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
@@ -18,14 +20,16 @@
   <body class="admin-body">
     <header class="admin-topbar">
       <a class="brand admin-brand" href="https://joker055bf.github.io/NBD/" aria-label="العودة إلى الموقع العام">
-        <img class="brand-logo" src="logo.png" alt="جمعية نبض التطوعية - Nabd Volunteering Association" />
+        <img class="brand-mark-img" src="logo-mark.png" alt="" width="370" height="136" aria-hidden="true" />
+        <span class="brand-copy"><strong>الوحدة التطوعية</strong><small>Nabd Volunteering Association</small></span>
       </a>
+      <span class="admin-topbar-chip">استعادة الدخول</span>
       <a href="https://joker055bf.github.io/NBD/" class="admin-back-link">العودة للموقع العام <span>←</span></a>
     </header>
     <main class="admin-page">
       <section class="admin-login-card admin-recovery-page" aria-labelledby="recoveryPageTitle">
         <a class="admin-recovery-back" id="recoveryBackLink" href="index.html">← العودة إلى تسجيل الدخول</a>
-        <span class="admin-login-icon" aria-hidden="true">⌘</span>
+        <span class="admin-login-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6Z"/><path d="M12 11v4M12 18h.01"/></svg></span>
         <span class="section-kicker">مساعدة تسجيل الدخول</span>
         <h1 id="recoveryPageTitle"></h1>
         <p id="recoveryPageDescription"></p>
