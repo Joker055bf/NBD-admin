@@ -3,10 +3,10 @@ const firebaseReady = typeof firebase !== "undefined"
   && Object.values(firebaseConfig).every((value) => typeof value === "string" && value.trim());
 const auth = firebaseReady ? firebase.auth() : null;
 const db = firebaseReady ? firebase.firestore() : null;
+const functions = firebaseReady ? firebase.app().functions("us-central1") : null;
 const loginPanel = document.getElementById("adminLoginPanel");
 const dashboard = document.getElementById("adminDashboard");
 const toast = document.getElementById("adminToast");
-const adminAuthDomain = "admin.nbda-1ee36.firebaseapp.com";
 let signedInAdmin = null;
 let signedInProfile = null;
 let currentRole = null;
@@ -31,6 +31,37 @@ const roleDescriptions = {
   executive: "متابعة الأداء العام وإدارة رتب المستخدمين المحددة."
 };
 
+const adminNavigationTargets = {
+  admin: {
+    initiatives: "#adminInitiativeFormPanel",
+    teams: "#staffTeamPanel",
+    requests: "#adminRequestsPanel",
+    reports: "#staffReportsPanel",
+    certificates: "#staffCertificatesPanel"
+  },
+  leader: {
+    initiatives: "#leaderInitiativesPanel",
+    teams: "#leaderTeamName",
+    requests: "#leaderJoinRequestsPanel",
+    reports: "#leaderReportsPanel",
+    certificates: "#leaderCertificatesPanel"
+  },
+  staff: {
+    initiatives: "#staffInitiativeRequestsPanel",
+    teams: "#staffTeamPanel",
+    requests: "#staffInitiativeRequestsPanel",
+    reports: "#staffReportsPanel",
+    certificates: "#staffCertificatesPanel"
+  },
+  executive: {
+    initiatives: "#executiveOverviewPanel",
+    teams: "#executiveOverviewPanel",
+    requests: "#executiveOverviewPanel",
+    reports: "#executiveOverviewPanel",
+    certificates: "#executiveOverviewPanel"
+  }
+};
+
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add("show");
@@ -38,15 +69,174 @@ function showToast(message) {
   toastTimer = window.setTimeout(() => toast.classList.remove("show"), 4000);
 }
 
+function closeAdminMenu() {
+  const menu = document.getElementById("adminQuickMenu");
+  const toggle = document.getElementById("adminMenuToggle");
+  menu.hidden = true;
+  toggle.setAttribute("aria-expanded", "false");
+}
+
+document.getElementById("adminMenuToggle").addEventListener("click", () => {
+  const menu = document.getElementById("adminQuickMenu");
+  const toggle = document.getElementById("adminMenuToggle");
+  menu.hidden = !menu.hidden;
+  toggle.setAttribute("aria-expanded", String(!menu.hidden));
+});
+
+document.getElementById("adminQuickMenu").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-admin-section]");
+  if (!button) return;
+  const section = button.dataset.adminSection;
+  const profilePanel = document.getElementById("adminProfilePanel");
+  if (section === "profile") {
+    profilePanel.hidden = false;
+    profilePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else {
+    profilePanel.hidden = true;
+    const selector = section === "home"
+      ? ".admin-dashboard-heading"
+      : adminNavigationTargets[currentRole]?.[section];
+    const target = selector && document.querySelector(selector);
+    if (target && !target.closest("[hidden]")) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      showToast("هذا القسم غير متاح في لوحة دورك.");
+    }
+  }
+  closeAdminMenu();
+});
+
+function accountProfileCollection() {
+  return currentRole === "admin" ? "adminAccounts" : "volunteers";
+}
+
+function loadAccountSettings() {
+  if (!signedInAdmin || !signedInProfile) return;
+  document.getElementById("profileDisplayName").value = signedInProfile.displayName || "";
+  document.getElementById("profileEmail").value = signedInAdmin.email || signedInProfile.email || "";
+  document.getElementById("profileGender").value = signedInProfile.gender || "";
+  document.getElementById("profileNationality").value = signedInProfile.nationality || "";
+  document.getElementById("currentAdminUsername").value = signedInProfile.username || "";
+  document.getElementById("newAdminUsername").value = signedInProfile.username || "";
+}
+
+document.getElementById("adminProfileForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!signedInAdmin || !signedInProfile) return;
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const displayName = document.getElementById("profileDisplayName").value.trim();
+  const gender = document.getElementById("profileGender").value;
+  const nationality = document.getElementById("profileNationality").value.trim();
+  if (displayName.length < 2 || displayName.length > 100 || nationality.length > 80) {
+    showToast("تحقق من الاسم والجنسية قبل الحفظ.");
+    return;
+  }
+  const changes = {
+    displayName,
+    email: signedInAdmin.email,
+    gender: gender || firebase.firestore.FieldValue.delete(),
+    nationality: nationality || firebase.firestore.FieldValue.delete()
+  };
+  button.disabled = true;
+  try {
+    await db.collection(accountProfileCollection()).doc(signedInAdmin.uid).update(changes);
+    signedInProfile = {
+      ...signedInProfile,
+      displayName,
+      email: signedInAdmin.email,
+      gender,
+      nationality
+    };
+    document.getElementById("adminSessionName").textContent = displayName;
+    try {
+      await signedInAdmin.updateProfile({ displayName });
+    } catch (error) {
+      showToast(`تم حفظ بيانات الملف الشخصي، لكن تعذر تحديث اسم العرض في الحساب: ${errorMessage(error)}`);
+      return;
+    }
+    showToast("تم حفظ بياناتك الشخصية.");
+  } catch (error) {
+    showToast(errorMessage(error));
+  } finally {
+    button.disabled = false;
+  }
+});
+
+async function reauthenticateAdmin(password) {
+  const credential = firebase.auth.EmailAuthProvider.credential(signedInAdmin.email, password);
+  await signedInAdmin.reauthenticateWithCredential(credential);
+}
+
+document.getElementById("adminUsernameForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!signedInAdmin) return;
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const currentPassword = document.getElementById("currentUsernamePassword").value;
+  const newUsername = document.getElementById("newAdminUsername").value.trim();
+  if (!/^[A-Za-z0-9._-]{3,32}$/.test(newUsername)) {
+    showToast("اسم المستخدم من 3 إلى 32 خانة، ويقبل الأحرف الإنجليزية والأرقام و . و _ و -.");
+    return;
+  }
+  button.disabled = true;
+  try {
+    await reauthenticateAdmin(currentPassword);
+    const result = await functions.httpsCallable("setAccountUsername")({ username: newUsername });
+    signedInProfile = { ...signedInProfile, username: result.data.username };
+    form.reset();
+    document.getElementById("currentAdminUsername").value = result.data.username;
+    document.getElementById("newAdminUsername").value = result.data.username;
+    showToast("تم تغيير اسم المستخدم بنجاح.");
+  } catch (error) {
+    showToast(errorMessage(error));
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.getElementById("adminPasswordForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!signedInAdmin) return;
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const currentPassword = document.getElementById("currentPasswordForChange").value;
+  const newPassword = document.getElementById("newAdminPassword").value;
+  if (newPassword.length < 6) {
+    showToast("كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف.");
+    return;
+  }
+  button.disabled = true;
+  try {
+    await reauthenticateAdmin(currentPassword);
+    await signedInAdmin.updatePassword(newPassword);
+    form.reset();
+    showToast("تم تغيير كلمة المرور بنجاح.");
+  } catch (error) {
+    showToast(errorMessage(error));
+  } finally {
+    button.disabled = false;
+  }
+});
+
 function errorMessage(error) {
   const messages = {
     "auth/invalid-credential": "بيانات الدخول غير صحيحة.",
     "auth/invalid-email": "اسم المستخدم غير صالح.",
-    "auth/configuration-not-found": "تسجيل الدخول بالبريد وكلمة المرور غير مفعّل في Firebase Authentication. فعّل Email/Password من إعدادات تسجيل الدخول في Firebase Console.",
+    "auth/email-already-in-use": "هذا البريد مستخدم في حساب آخر.",
+    "auth/requires-recent-login": "أعد تسجيل الدخول ثم حاول تغيير بيانات الحساب.",
+    "auth/credential-already-in-use": "بيانات الدخول مستخدمة في حساب آخر.",
+    "auth/wrong-password": "كلمة المرور الحالية غير صحيحة.",
+    "auth/weak-password": "كلمة المرور الجديدة ضعيفة.",
+    "auth/operation-not-allowed": "إعادة تعيين كلمة المرور غير مفعّلة في إعدادات Firebase Authentication.",
+    "auth/configuration-not-found": "تسجيل الدخول بكلمة المرور غير مفعّل في Firebase Authentication. فعّل Email/Password من إعدادات تسجيل الدخول في Firebase Console.",
     "auth/too-many-requests": "محاولات كثيرة. حاول بعد قليل.",
     "auth/network-request-failed": "تعذر الاتصال. تحقق من الإنترنت.",
     "permission-denied": "رفضت قواعد Firestore العملية. تحقق من دور المسؤول والقواعد المنشورة.",
-    "firestore/permission-denied": "رفضت قواعد Firestore العملية. تحقق من دور المسؤول والقواعد المنشورة."
+    "firestore/permission-denied": "رفضت قواعد Firestore العملية. تحقق من دور المسؤول والقواعد المنشورة.",
+    "functions/already-exists": "اسم المستخدم مستخدم مسبقًا.",
+    "functions/unauthenticated": "اسم المستخدم أو كلمة المرور غير صحيحة.",
+    "functions/invalid-argument": "تحقق من البيانات المدخلة."
   };
   return messages[error.code] || error.message || "حدث خطأ غير متوقع.";
 }
@@ -78,6 +268,7 @@ async function verifyAdmin(user) {
   document.getElementById("adminSessionName").textContent = signedInProfile.displayName || user.email;
   document.getElementById("dashboardRoleLabel").textContent = roleLabels[currentRole];
   document.getElementById("dashboardRoleDescription").textContent = roleDescriptions[currentRole];
+  loadAccountSettings();
   document.querySelectorAll("[data-role-panel]").forEach((panel) => {
     const allowedRoles = panel.dataset.rolePanel.split(/\s+/);
     panel.hidden = currentRole === "admin"
@@ -87,6 +278,24 @@ async function verifyAdmin(user) {
   loginPanel.hidden = true;
   dashboard.hidden = false;
   await loadDashboard();
+  if (currentRole === "admin") {
+    try {
+      const result = await functions.httpsCallable("backfillAccountUsernames")({});
+      if (result.data.updated > 0) {
+        showToast(`تم تهيئة أسماء المستخدمين للحسابات الحالية: ${result.data.updated}.`);
+        const profile = await db.collection(accountProfileCollection()).doc(signedInAdmin.uid).get();
+        if (profile.exists) {
+          signedInProfile = profile.data();
+          loadAccountSettings();
+        }
+      }
+      if (result.data.skipped > 0) {
+        showToast(`توجد حسابات بلا بريد إلكتروني صالح، ولم تُهيّأ أسماؤها: ${result.data.skipped}.`);
+      }
+    } catch (error) {
+      showToast(`تعذر تهيئة أسماء المستخدمين للحسابات الحالية: ${errorMessage(error)}`);
+    }
+  }
   return true;
 }
 
@@ -96,16 +305,18 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (even
     showToast("أضف إعدادات Firebase إلى firebase-config.js أولًا.");
     return;
   }
-  const loginName = document.getElementById("adminUsername").value.trim();
-  const email = loginName.toLowerCase() === "yasser"
-    ? `yasser@${adminAuthDomain}`
-    : loginName;
-  if (loginName.toLowerCase() !== "yasser" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    showToast("أدخل Yasser لحساب المؤسس أو البريد الإلكتروني المسجل للحساب.");
+  const username = document.getElementById("adminUsername").value.trim();
+  if (!/^[A-Za-z0-9._-]{3,32}$/.test(username)) {
+    showToast("اسم المستخدم من 3 إلى 32 خانة.");
     return;
   }
   try {
-    await auth.signInWithEmailAndPassword(email, document.getElementById("adminPassword").value);
+    const result = await functions.httpsCallable("usernameSignIn")({
+      username,
+      password: document.getElementById("adminPassword").value,
+      apiKey: firebaseConfig.apiKey
+    });
+    await auth.signInWithCustomToken(result.data.customToken);
   } catch (error) {
     showToast(errorMessage(error));
   }
@@ -117,6 +328,10 @@ document.getElementById("adminLogoutButton").addEventListener("click", async () 
     signedInAdmin = null;
     signedInProfile = null;
     currentRole = null;
+    document.getElementById("adminProfilePanel").hidden = true;
+    closeAdminMenu();
+    document.getElementById("adminUsernameForm").reset();
+    document.getElementById("adminPasswordForm").reset();
     dashboard.hidden = true;
     loginPanel.hidden = false;
     document.getElementById("adminLoginForm").reset();
@@ -895,7 +1110,7 @@ async function loadExecutiveDashboard() {
   renderExecutiveReports(reports.docs);
   renderExecutiveCertificates(certificates.docs, volunteers.docs, initiatives.docs);
   renderExecutiveInitiativeRequests(initiativeRequests.docs);
-  renderExecutiveUsers(volunteers.docs);
+  renderExecutiveUsers(volunteers.docs, teams.docs);
 }
 
 function renderExecutiveTeams(teams, volunteers) {
@@ -993,7 +1208,7 @@ function renderExecutiveInitiativeRequests(requests) {
   });
 }
 
-function renderExecutiveUsers(volunteers) {
+function renderExecutiveUsers(volunteers, teams) {
   const rows = document.getElementById("executiveUserRows");
   rows.replaceChildren();
   document.getElementById("executiveUsersEmpty").hidden = volunteers.length > 0;
@@ -1003,7 +1218,8 @@ function renderExecutiveUsers(volunteers) {
     rowCell(row, user.displayName);
     rowCell(row, user.email);
     rowCell(row, item.id);
-    rowCell(row, user.teamId);
+    const currentTeam = teams.find((team) => team.id === user.teamId);
+    rowCell(row, currentTeam?.data().name || "—");
     const roleCell = document.createElement("td");
     const role = document.createElement("select");
     role.className = "user-role-select";
@@ -1017,13 +1233,26 @@ function renderExecutiveUsers(volunteers) {
         role.append(option);
       });
     roleCell.append(role);
-    const teamId = document.createElement("input");
-    teamId.className = "dialog-input";
-    teamId.placeholder = "معرّف الفريق للقائد";
-    teamId.value = user.teamId || "";
-    teamId.hidden = user.role !== "leader";
-    role.addEventListener("change", () => { teamId.hidden = role.value !== "leader"; });
-    roleCell.append(teamId);
+    const teamSelect = document.createElement("select");
+    teamSelect.className = "user-role-select leader-team-select";
+    teamSelect.setAttribute("aria-label", `فريق القائد ${user.displayName || user.email}`);
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = teams.length ? "اختر الفريق" : "لا توجد فرق";
+    teamSelect.append(emptyOption);
+    teams.forEach((team) => {
+      const option = document.createElement("option");
+      option.value = team.id;
+      option.textContent = team.data().name || `فريق (${team.id})`;
+      option.selected = user.role === "leader" && user.teamId === team.id;
+      teamSelect.append(option);
+    });
+    teamSelect.hidden = user.role !== "leader";
+    role.addEventListener("change", () => {
+      teamSelect.hidden = role.value !== "leader";
+      if (role.value === "leader" && user.teamId) teamSelect.value = user.teamId;
+    });
+    roleCell.append(teamSelect);
     row.append(roleCell);
     const action = document.createElement("td");
     const save = document.createElement("button");
@@ -1032,18 +1261,20 @@ function renderExecutiveUsers(volunteers) {
     save.textContent = "حفظ";
     save.addEventListener("click", async () => {
       try {
-        const changes = { role: role.value };
-        if (role.value === "leader") {
-          if (!teamId.value.trim()) {
-            showToast("أدخل معرّف فريق موجود قبل تعيين قائد الفريق.");
-            return;
-          }
-          changes.teamId = teamId.value.trim();
-        } else if (user.teamId) {
-          changes.teamId = firebase.firestore.FieldValue.delete();
+        if (role.value === "leader" && !teamSelect.value) {
+          showToast("اختر فريقًا موجودًا قبل تعيين قائد الفريق.");
+          return;
         }
-        await item.ref.update(changes);
-        showToast("تم تحديث رتبة المستخدم.");
+        const selectedTeam = teams.find((team) => team.id === teamSelect.value);
+        const currentTeamLeader = selectedTeam?.data().leaderUid;
+        if (
+          role.value === "leader"
+          && currentTeamLeader
+          && currentTeamLeader !== item.id
+          && !window.confirm("هذا الفريق مرتبط بقائد حالي. عند المتابعة تنتقل القيادة إلى المستخدم المحدد وتُعاد رتبة القائد السابق إلى متطوع. هل تريد المتابعة؟")
+        ) return;
+        await saveVolunteerRole(item, role.value, teamSelect.value);
+        showToast("تم تحديث الرتبة وربطها بالفريق المحدد.");
         await loadExecutiveDashboard();
       } catch (error) {
         showToast(errorMessage(error));
@@ -1053,6 +1284,83 @@ function renderExecutiveUsers(volunteers) {
     row.append(action);
     rows.append(row);
   });
+}
+
+async function saveVolunteerRole(item, role, teamId) {
+  const userRef = item.ref;
+  await db.runTransaction(async (transaction) => {
+    const userSnapshot = await transaction.get(userRef);
+    if (!userSnapshot.exists) throw new Error("لم يعد حساب المستخدم موجودًا.");
+    const currentUser = userSnapshot.data();
+    const selectedTeamRef = role === "leader" ? db.collection("teams").doc(teamId) : null;
+    const currentTeamRef = currentUser.role === "leader" && currentUser.teamId
+      ? db.collection("teams").doc(currentUser.teamId)
+      : null;
+    const selectedTeamSnapshot = selectedTeamRef
+      ? await transaction.get(selectedTeamRef)
+      : null;
+    const currentTeamSnapshot = currentTeamRef
+      && currentTeamRef.id !== selectedTeamRef?.id
+      ? await transaction.get(currentTeamRef)
+      : currentTeamSnapshotForSameTeam(currentTeamRef, selectedTeamSnapshot);
+    if (selectedTeamSnapshot && !selectedTeamSnapshot.exists) {
+      throw new Error("الفريق المحدد لم يعد موجودًا. حدّث القائمة وحاول مجددًا.");
+    }
+
+    const previousLeaderUid = selectedTeamSnapshot?.data().leaderUid;
+    const previousLeaderRef = role === "leader"
+      && previousLeaderUid
+      && previousLeaderUid !== item.id
+      ? db.collection("volunteers").doc(previousLeaderUid)
+      : null;
+    const previousLeaderSnapshot = previousLeaderRef
+      ? await transaction.get(previousLeaderRef)
+      : null;
+
+    if (
+      currentTeamRef
+      && currentTeamRef.id !== selectedTeamRef?.id
+      && currentTeamSnapshot?.exists
+      && currentTeamSnapshot.data().leaderUid === item.id
+    ) {
+      transaction.update(currentTeamRef, { leaderUid: "" });
+    } else if (
+      role !== "leader"
+      && currentTeamRef
+      && currentTeamRef.id === selectedTeamRef?.id
+      && currentTeamSnapshot?.exists
+      && currentTeamSnapshot.data().leaderUid === item.id
+    ) {
+      transaction.update(currentTeamRef, { leaderUid: "" });
+    }
+
+    if (previousLeaderSnapshot?.exists) {
+      const previousLeader = previousLeaderSnapshot.data();
+      if (previousLeader.role === "leader" && previousLeader.teamId === teamId) {
+        transaction.update(previousLeaderRef, {
+          role: "volunteer",
+          teamId: firebase.firestore.FieldValue.delete()
+        });
+      }
+    }
+
+    const changes = { role };
+    if (role === "leader") {
+      changes.teamId = teamId;
+      if (selectedTeamSnapshot.data().leaderUid !== item.id) {
+        transaction.update(selectedTeamRef, { leaderUid: item.id });
+      }
+    } else if (currentUser.teamId) {
+      changes.teamId = firebase.firestore.FieldValue.delete();
+    }
+    transaction.update(userRef, changes);
+  });
+}
+
+function currentTeamSnapshotForSameTeam(currentTeamRef, selectedTeamSnapshot) {
+  return currentTeamRef?.id === selectedTeamSnapshot?.ref?.id
+    ? selectedTeamSnapshot
+    : null;
 }
 
 document.getElementById("initiativeForm").addEventListener("submit", async (event) => {

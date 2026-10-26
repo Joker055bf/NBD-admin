@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f8f5" />
+    <title>استعادة بيانات الدخول | منصة الوحدة التطوعية</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
+    <script defer src="firebase-config.js"></script>
+    <script defer src="admin-recovery.js"></script>
+  </head>
+  <body class="admin-body">
+    <header class="admin-topbar">
+      <a class="brand admin-brand" href="https://joker055bf.github.io/NBD/" aria-label="العودة إلى الموقع العام">
+        <img class="brand-logo" src="logo.png" alt="جمعية نبض التطوعية - Nabd Volunteering Association" />
+      </a>
+      <a href="https://joker055bf.github.io/NBD/" class="admin-back-link">العودة للموقع العام <span>←</span></a>
+    </header>
+    <main class="admin-page">
+      <section class="admin-login-card admin-recovery-page" aria-labelledby="recoveryPageTitle">
+        <a class="admin-recovery-back" id="recoveryBackLink" href="index.html">← العودة إلى تسجيل الدخول</a>
+        <span class="admin-login-icon" aria-hidden="true">⌘</span>
+        <span class="section-kicker">مساعدة تسجيل الدخول</span>
+        <h1 id="recoveryPageTitle"></h1>
+        <p id="recoveryPageDescription"></p>
+        <form id="passwordRecoveryForm" hidden>
+          <label class="field-label" for="recoveryUsername">اسم المستخدم</label>
+          <input class="dialog-input" id="recoveryUsername" type="text" autocomplete="username" minlength="3" maxlength="32" required />
+          <button type="submit" class="primary-button auth-submit">إرسال رابط الاستعادة</button>
+        </form>
+        <p class="recovery-username-guidance" id="usernameRecoveryGuidance" hidden>
+          لاستعادة اسم المستخدم أو البريد المرتبط بحسابك، تواصل مع إدارة المنصة للتحقق من بيانات الدخول.
+        </p>
+        <p class="recovery-feedback" id="recoveryFeedback" role="status" aria-live="polite" hidden></p>
+      </section>
+    </main>
+  </body>
+</html>
