@@ -236,9 +236,17 @@ function errorMessage(error) {
     "firestore/permission-denied": "رفضت قواعد Firestore العملية. تحقق من دور المسؤول والقواعد المنشورة.",
     "functions/already-exists": "اسم المستخدم مستخدم مسبقًا.",
     "functions/unauthenticated": "اسم المستخدم أو كلمة المرور غير صحيحة.",
-    "functions/invalid-argument": "تحقق من البيانات المدخلة."
+    "functions/invalid-argument": "تحقق من البيانات المدخلة.",
+    "functions/internal": "تعذر إكمال العملية بسبب إعدادات الخادم. تأكد من نشر دوال Firebase وتهيئة أسماء المستخدمين.",
+    internal: "تعذر إكمال العملية بسبب إعدادات الخادم. تأكد من نشر دوال Firebase وتهيئة أسماء المستخدمين.",
+    "functions/not-found": "خدمة تسجيل الدخول غير منشورة بعد. انشر دوال Firebase ثم حاول مجددًا.",
+    "functions/failed-precondition": "لم تكتمل تهيئة الحسابات بعد. تواصل مع إدارة المنصة.",
+    "functions/deadline-exceeded": "استغرق الطلب وقتًا أطول من المتوقع. حاول مرة أخرى.",
+    "functions/unavailable": "الخدمة غير متاحة مؤقتًا. تحقق من الاتصال وحاول لاحقًا.",
+    "functions/permission-denied": "لا تملك صلاحية تنفيذ هذا الإجراء.",
+    "functions/resource-exhausted": "تعذر إكمال العملية الآن. تواصل مع إدارة المنصة."
   };
-  return messages[error.code] || error.message || "حدث خطأ غير متوقع.";
+  return messages[error.code] || "حدث خطأ غير متوقع. حاول مرة أخرى أو تواصل مع إدارة المنصة.";
 }
 
 async function verifyAdmin(user) {
@@ -306,17 +314,16 @@ document.getElementById("adminLoginForm").addEventListener("submit", async (even
     return;
   }
   const username = document.getElementById("adminUsername").value.trim();
-  if (!/^[A-Za-z0-9._-]{3,32}$/.test(username)) {
-    showToast("اسم المستخدم من 3 إلى 32 خانة.");
+  const password = document.getElementById("adminPassword").value;
+  if (!username || !password) {
+    showToast("أدخل اسم المستخدم وكلمة المرور.");
     return;
   }
   try {
-    const result = await functions.httpsCallable("usernameSignIn")({
-      username,
-      password: document.getElementById("adminPassword").value,
-      apiKey: firebaseConfig.apiKey
-    });
-    await auth.signInWithCustomToken(result.data.customToken);
+    const email = username.includes("@")
+      ? username
+      : `${username.toLowerCase()}@admin.nbda-1ee36.firebaseapp.com`;
+    await auth.signInWithEmailAndPassword(email, password);
   } catch (error) {
     showToast(errorMessage(error));
   }
@@ -632,7 +639,7 @@ async function loadLeaderDashboard() {
   );
   document.getElementById("leaderTeamName").textContent = leaderTeam.name || "فريقي";
   document.getElementById("leaderTeamDescription").textContent =
-    `${leaderTeam.description || "بيانات الفريق وأعضاؤه وطلباته."} معرّف الفريق: ${teamId}`;
+    leaderTeam.description || "بيانات الفريق وأعضاؤه وطلباته.";
   document.getElementById("leaderMemberCount").textContent = String(members.size);
   document.getElementById("leaderJoinRequestCount").textContent = String(
     joinRequests.docs.filter((request) => request.data().status === "pending").length
@@ -842,7 +849,6 @@ function renderStaffTeams(teams) {
     const team = item.data();
     const row = document.createElement("tr");
     rowCell(row, team.name);
-    rowCell(row, item.id);
     rowCell(row, team.leaderUid);
     rowCell(row, team.description);
     const action = document.createElement("td");
@@ -1578,7 +1584,7 @@ document.getElementById("staffTeamForm").addEventListener("submit", async (event
     if (description) team.description = description;
     const reference = await db.collection("teams").add(team);
     form.reset();
-    showToast(`تم إنشاء الفريق. معرّفه: ${reference.id}`);
+    showToast(`تم إنشاء فريق «${team.name}» بنجاح.`);
     await loadStaffDashboard();
   } catch (error) {
     showToast(errorMessage(error));
