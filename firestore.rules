@@ -1,0 +1,706 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/adminAccounts/$(request.auth.uid))
+        && get(/databases/$(database)/documents/adminAccounts/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function hasVolunteerProfile() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/volunteers/$(request.auth.uid));
+    }
+
+    function volunteerRole() {
+      return hasVolunteerProfile()
+        ? get(/databases/$(database)/documents/volunteers/$(request.auth.uid)).data.role
+        : 'none';
+    }
+
+    function isTeamLeader() {
+      return hasVolunteerProfile() && volunteerRole() == 'leader';
+    }
+
+    function isVolunteerWorkStaff() {
+      return hasVolunteerProfile() && volunteerRole() == 'staff';
+    }
+
+    function isExecutive() {
+      return hasVolunteerProfile() && volunteerRole() == 'executive';
+    }
+
+    function canReadAllOperationalData() {
+      return isAdmin() || isVolunteerWorkStaff() || isExecutive();
+    }
+
+    function myTeamId() {
+      return get(/databases/$(database)/documents/volunteers/$(request.auth.uid)).data.teamId;
+    }
+
+    function leadsTeam(teamId) {
+      return teamId is string
+        && isTeamLeader()
+        && myTeamId() == teamId
+        && exists(/databases/$(database)/documents/teams/$(teamId))
+        && get(/databases/$(database)/documents/teams/$(teamId)).data.leaderUid == request.auth.uid;
+    }
+
+    function validVolunteerRole(role) {
+      return role in ['volunteer', 'leader', 'staff', 'executive'];
+    }
+
+    match /loginUsernames/{username} {
+      allow get: if signedIn() && (resource == null || resource.data.uid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'email'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email;
+      allow list, update, delete: if false;
+    }
+
+    match /adminAccounts/{adminId} {
+      allow read: if signedIn() && (request.auth.uid == adminId || isAdmin());
+      allow update: if request.auth.uid == adminId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.role == 'admin'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'email', 'gender', 'nationality'])
+        && (!('displayName' in request.resource.data)
+          || (request.resource.data.displayName is string
+            && request.resource.data.displayName.size() >= 2
+            && request.resource.data.displayName.size() <= 100))
+        && (!('email' in request.resource.data)
+          || request.resource.data.email == request.auth.token.email)
+        && (!('gender' in request.resource.data)
+          || request.resource.data.gender in ['male', 'female', 'prefer_not_to_say'])
+        && (!('nationality' in request.resource.data)
+          || (request.resource.data.nationality is string
+            && request.resource.data.nationality.size() <= 80));
+      allow create, delete: if false;
+    }
+
+    match /volunteers/{volunteerId} {
+      allow create: if request.resource.data.uid == volunteerId
+        && request.resource.data.keys().hasAll([
+          'uid', 'displayName', 'email', 'role', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'email', 'phone', 'username', 'role', 'createdAt'
+        ])
+        && (!('username' in request.resource.data)
+          || (request.resource.data.username is string
+            && request.resource.data.username.size() >= 3
+            && request.resource.data.username.size() <= 32))
+        && (!('phone' in request.resource.data)
+          || (request.resource.data.phone is string
+            && request.resource.data.phone.size() >= 7
+            && request.resource.data.phone.size() <= 20))
+        && (
+          (signedIn()
+            && request.auth.uid == volunteerId
+            && request.resource.data.email == request.auth.token.email
+            && request.resource.data.role == 'volunteer')
+          || (isAdmin() && validVolunteerRole(request.resource.data.role))
+        );
+      allow read: if signedIn()
+        && (
+          request.auth.uid == volunteerId
+          || canReadAllOperationalData()
+          || (isTeamLeader() && resource.data.teamId == myTeamId())
+        );
+      allow update: if (
+          isAdmin()
+          && validVolunteerRole(request.resource.data.role)
+          && (
+            request.resource.data.role != 'leader'
+            || (
+              request.resource.data.teamId is string
+              && exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId))
+              && getAfter(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.leaderUid == volunteerId
+            )
+          )
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'teamId'])
+        )
+        || (
+          isExecutive()
+          && validVolunteerRole(request.resource.data.role)
+          && (
+            request.resource.data.role != 'leader'
+            || (
+              request.resource.data.teamId is string
+              && exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId))
+              && getAfter(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.leaderUid == volunteerId
+            )
+          )
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'teamId'])
+        )
+        || (
+          signedIn()
+          && request.auth.uid == volunteerId
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['displayName', 'email', 'phone', 'gender', 'nationality'])
+          && (!('displayName' in request.resource.data)
+            || (request.resource.data.displayName is string
+              && request.resource.data.displayName.size() >= 2
+              && request.resource.data.displayName.size() <= 100))
+          && (!('email' in request.resource.data)
+            || request.resource.data.email == request.auth.token.email)
+          && (!('phone' in request.resource.data)
+            || (request.resource.data.phone is string
+              && request.resource.data.phone.size() >= 7
+              && request.resource.data.phone.size() <= 20))
+          && (!('gender' in request.resource.data)
+            || request.resource.data.gender in ['male', 'female', 'prefer_not_to_say'])
+          && (!('nationality' in request.resource.data)
+            || (request.resource.data.nationality is string
+              && request.resource.data.nationality.size() <= 80))
+        )
+        || (
+          isTeamLeader()
+          && resource.data.role == 'volunteer'
+          && resource.data.role == request.resource.data.role
+          && (!('teamId' in resource.data) || resource.data.teamId == myTeamId())
+          && request.resource.data.teamId == myTeamId()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamId'])
+        );
+      allow delete: if isAdmin() && volunteerId != request.auth.uid;
+    }
+
+    match /teams/{teamId} {
+      allow read: if canReadAllOperationalData() || leadsTeam(teamId);
+      allow create: if (isAdmin() || isVolunteerWorkStaff())
+        && request.resource.data.keys().hasAll(['name', 'leaderUid', 'createdAt'])
+        && request.resource.data.leaderUid is string
+        && exists(/databases/$(database)/documents/volunteers/$(request.resource.data.leaderUid))
+        && request.resource.data.keys().hasOnly([
+          'name', 'leaderUid', 'description', 'createdAt'
+        ]);
+      allow update: if (isAdmin() || isVolunteerWorkStaff())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'leaderUid', 'description'
+        ])
+        && (
+          request.resource.data.leaderUid == resource.data.leaderUid
+          || (
+            request.resource.data.leaderUid is string
+            && (
+              exists(/databases/$(database)/documents/volunteers/$(request.resource.data.leaderUid))
+              || (isAdmin() && request.resource.data.leaderUid == '')
+            )
+          )
+        )
+        || (
+          isExecutive()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leaderUid'])
+          && request.resource.data.leaderUid is string
+          && (
+            request.resource.data.leaderUid == ''
+            || (
+              exists(/databases/$(database)/documents/volunteers/$(request.resource.data.leaderUid))
+              && getAfter(/databases/$(database)/documents/volunteers/$(request.resource.data.leaderUid)).data.role == 'leader'
+              && getAfter(/databases/$(database)/documents/volunteers/$(request.resource.data.leaderUid)).data.teamId == teamId
+            )
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /teamJoinRequests/{requestId} {
+      allow create: if hasVolunteerProfile()
+        && volunteerRole() == 'volunteer'
+        && request.resource.data.volunteerUid == request.auth.uid
+        && request.resource.data.volunteerName
+          == get(/databases/$(database)/documents/volunteers/$(request.auth.uid)).data.displayName
+        && request.resource.data.teamId is string
+        && exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId))
+        && request.resource.data.teamName
+          == get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.name
+        && !('teamId' in get(/databases/$(database)/documents/volunteers/$(request.auth.uid)).data)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasAll([
+          'teamId', 'teamName', 'volunteerUid', 'volunteerName', 'status', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'teamId', 'teamName', 'volunteerUid', 'volunteerName', 'status', 'createdAt'
+        ]);
+      allow read: if signedIn()
+        && (
+          resource.data.volunteerUid == request.auth.uid
+          || isAdmin()
+          || isVolunteerWorkStaff()
+          || leadsTeam(resource.data.teamId)
+        );
+      allow update: if leadsTeam(resource.data.teamId)
+        && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['accepted', 'rejected'];
+      allow delete: if isAdmin();
+    }
+
+    match /initiativeRequests/{requestId} {
+      allow create: if leadsTeam(request.resource.data.teamId)
+        && request.resource.data.leaderUid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasAll([
+          'title', 'description', 'teamId', 'teamName', 'leaderUid', 'leaderName',
+          'date', 'time', 'location', 'requiredVolunteers', 'tasks', 'hours',
+          'status', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'title', 'description', 'teamId', 'teamName', 'leaderUid', 'leaderName',
+          'date', 'time', 'location', 'requiredVolunteers', 'tasks', 'hours',
+          'status', 'attachments', 'createdAt'
+        ])
+        && request.resource.data.teamName
+          == get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.name
+        && request.resource.data.leaderName
+          == get(/databases/$(database)/documents/volunteers/$(request.auth.uid)).data.displayName
+        && request.resource.data.requiredVolunteers is int
+        && request.resource.data.requiredVolunteers > 0
+        && request.resource.data.hours is number
+        && request.resource.data.hours > 0;
+      allow read: if canReadAllOperationalData()
+        || (isTeamLeader() && resource.data.leaderUid == request.auth.uid);
+      allow update: if (
+          (isAdmin() || isVolunteerWorkStaff())
+          && resource.data.status in ['pending', 'revision_requested']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'reviewedBy', 'reviewedAt', 'reviewNote'
+          ])
+          && request.resource.data.status in ['approved', 'rejected', 'revision_requested']
+          && request.resource.data.reviewedBy == request.auth.uid
+          && request.resource.data.reviewNote is string
+        )
+        || (
+          leadsTeam(resource.data.teamId)
+          && resource.data.leaderUid == request.auth.uid
+          && resource.data.status == 'revision_requested'
+          && request.resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title', 'description', 'date', 'time', 'location', 'requiredVolunteers',
+            'tasks', 'hours', 'attachments', 'status'
+          ])
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /initiatives/{initiativeId} {
+      allow read: if isAdmin()
+        || isVolunteerWorkStaff()
+        || isExecutive()
+        || (isTeamLeader() && resource.data.teamId == myTeamId())
+        || resource.data.published == true;
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasAll([
+          'title', 'description', 'category', 'date', 'location', 'hours',
+          'status', 'published', 'createdBy', 'createdAt'
+        ])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'title', 'description', 'category', 'date', 'location', 'hours',
+          'status', 'published', 'createdBy', 'createdAt', 'teamId', 'teamName',
+          'leaderUid', 'requiredVolunteers', 'tasks', 'attachments',
+          'approvedRequestId'
+        ])
+        || (
+          isVolunteerWorkStaff()
+          && request.resource.data.keys().hasAll([
+            'title', 'description', 'category', 'date', 'location', 'hours',
+            'status', 'published', 'createdBy', 'createdAt', 'teamId',
+            'approvedRequestId'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'title', 'description', 'category', 'date', 'location', 'hours',
+            'status', 'published', 'createdBy', 'createdAt', 'teamId', 'teamName',
+            'leaderUid', 'requiredVolunteers', 'tasks', 'attachments',
+            'approvedRequestId'
+          ])
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.status == 'approved'
+          && request.resource.data.published == false
+          && exists(/databases/$(database)/documents/initiativeRequests/$(request.resource.data.approvedRequestId))
+          && get(/databases/$(database)/documents/initiativeRequests/$(request.resource.data.approvedRequestId)).data.status == 'approved'
+          && get(/databases/$(database)/documents/initiativeRequests/$(request.resource.data.approvedRequestId)).data.teamId == request.resource.data.teamId
+        );
+      allow update: if (
+          isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title', 'description', 'category', 'date', 'location', 'hours',
+            'status', 'published', 'teamId', 'teamName', 'leaderUid',
+            'requiredVolunteers', 'tasks', 'attachments'
+          ])
+        )
+        || (
+          leadsTeam(resource.data.teamId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'published'])
+          && (
+            (resource.data.status == 'approved'
+              && request.resource.data.status == 'open'
+              && request.resource.data.published == true)
+            || (resource.data.status == 'open'
+              && request.resource.data.status == 'closed'
+              && request.resource.data.published == false)
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /participationRequests/{requestId} {
+      allow create: if signedIn()
+        && exists(/databases/$(database)/documents/volunteers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/volunteers/$(request.auth.uid)).data.role == 'volunteer'
+        && request.resource.data.keys().hasOnly([
+          'initiativeId', 'initiativeName', 'volunteerUid',
+          'volunteerName', 'volunteerEmail', 'volunteerPhone', 'status', 'createdAt'
+        ])
+        && (!('volunteerPhone' in request.resource.data)
+          || (request.resource.data.volunteerPhone is string
+            && request.resource.data.volunteerPhone.size() >= 7
+            && request.resource.data.volunteerPhone.size() <= 20))
+        && request.resource.data.volunteerUid == request.auth.uid
+        && request.resource.data.volunteerEmail == request.auth.token.email
+        && request.resource.data.volunteerName
+          == get(/databases/$(database)/documents/volunteers/$(request.auth.uid)).data.displayName
+        && request.resource.data.status == 'pending'
+        && exists(/databases/$(database)/documents/initiatives/$(request.resource.data.initiativeId))
+        && request.resource.data.initiativeName
+          == get(/databases/$(database)/documents/initiatives/$(request.resource.data.initiativeId)).data.title
+        && get(/databases/$(database)/documents/initiatives/$(request.resource.data.initiativeId)).data.published == true
+        && get(/databases/$(database)/documents/initiatives/$(request.resource.data.initiativeId)).data.status == 'open';
+      allow read: if signedIn()
+        && (
+          resource.data.volunteerUid == request.auth.uid
+          || canReadAllOperationalData()
+          || (
+            isTeamLeader()
+            && exists(/databases/$(database)/documents/initiatives/$(resource.data.initiativeId))
+            && get(/databases/$(database)/documents/initiatives/$(resource.data.initiativeId)).data.teamId == myTeamId()
+          )
+        );
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['pending', 'accepted', 'rejected'];
+      allow delete: if isAdmin();
+    }
+
+    match /reports/{reportId} {
+      allow create: if leadsTeam(request.resource.data.teamId)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'teamId', 'initiativeId', 'createdBy', 'content', 'volunteersCount',
+          'beneficiariesCount', 'attachments', 'attendance', 'attendanceSummary',
+          'createdAt', 'status'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'teamId', 'initiativeId', 'createdBy', 'content', 'volunteersCount',
+          'beneficiariesCount', 'attachments', 'attendance', 'attendanceSummary',
+          'createdAt', 'status'
+        ])
+        && request.resource.data.attendance is list
+        && request.resource.data.attendance.size() <= 500
+        && request.resource.data.attendanceSummary is map
+        && request.resource.data.attendanceSummary.registered is int
+        && request.resource.data.attendanceSummary.registered >= 0
+        && request.resource.data.attendanceSummary.registered <= 100000
+        && request.resource.data.attendanceSummary.present is int
+        && request.resource.data.attendanceSummary.present >= 0
+        && request.resource.data.attendanceSummary.present <= 100000
+        && request.resource.data.attendanceSummary.absent is int
+        && request.resource.data.attendanceSummary.absent >= 0
+        && request.resource.data.attendanceSummary.absent <= 100000
+        && exists(/databases/$(database)/documents/initiatives/$(request.resource.data.initiativeId))
+        && get(/databases/$(database)/documents/initiatives/$(request.resource.data.initiativeId)).data.teamId == request.resource.data.teamId
+        && get(/databases/$(database)/documents/initiatives/$(request.resource.data.initiativeId)).data.status == 'open'
+        && request.resource.data.content is string
+        && request.resource.data.content.size() >= 10
+        && request.resource.data.content.size() <= 5000
+        && request.resource.data.volunteersCount is int
+        && request.resource.data.volunteersCount > 0
+        && request.resource.data.volunteersCount <= 100000
+        && request.resource.data.beneficiariesCount is int
+        && request.resource.data.beneficiariesCount >= 0
+        && request.resource.data.beneficiariesCount <= 1000000
+        && request.resource.data.attachments is list
+        && request.resource.data.attachments.size() >= 1
+        && request.resource.data.attachments.size() <= 8
+        && request.resource.data.status == 'submitted';
+      allow read: if canReadAllOperationalData()
+        || (isTeamLeader() && resource.data.teamId == myTeamId());
+      allow update: if (
+          (isAdmin() || isVolunteerWorkStaff())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'reviewNote', 'reviewedBy', 'reviewedAt'
+          ])
+          && request.resource.data.status in ['approved', 'reviewed', 'revision_requested']
+          && request.resource.data.reviewedBy == request.auth.uid
+          && request.resource.data.reviewNote is string
+          && request.resource.data.reviewNote.size() <= 2000
+        )
+        || (
+          isTeamLeader()
+          && resource.data.teamId == myTeamId()
+          && resource.data.status == 'revision_requested'
+          && request.resource.data.status == 'submitted'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'content', 'volunteersCount', 'beneficiariesCount', 'attachments',
+            'attendance', 'attendanceSummary'
+          ])
+          && request.resource.data.attendance is list
+          && request.resource.data.attendance.size() <= 500
+          && request.resource.data.attendanceSummary is map
+          && request.resource.data.attendanceSummary.registered is int
+          && request.resource.data.attendanceSummary.present is int
+          && request.resource.data.attendanceSummary.absent is int
+          && request.resource.data.content is string
+          && request.resource.data.content.size() >= 10
+          && request.resource.data.content.size() <= 5000
+          && request.resource.data.volunteersCount is int
+          && request.resource.data.volunteersCount > 0
+          && request.resource.data.volunteersCount <= 100000
+          && request.resource.data.beneficiariesCount is int
+          && request.resource.data.beneficiariesCount >= 0
+          && request.resource.data.beneficiariesCount <= 1000000
+          && request.resource.data.attachments is list
+          && request.resource.data.attachments.size() >= 1
+          && request.resource.data.attachments.size() <= 8
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /certificates/{certificateId} {
+      allow create: if leadsTeam(request.resource.data.teamId)
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'teamId', 'volunteerUid', 'initiativeId', 'participationRequestId',
+          'volunteerName', 'initiativeTitle', 'initiativeDate',
+          'status', 'requestedBy', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'teamId', 'volunteerUid', 'initiativeId', 'participationRequestId',
+          'volunteerName', 'initiativeTitle', 'initiativeDate',
+          'status', 'requestedBy', 'createdAt', 'certificateNumber',
+          'certificateUrl', 'reviewNote', 'reviewedBy', 'reviewedAt',
+          'issuedBy', 'issuedAt'
+        ])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.volunteerUid is string
+        && exists(/databases/$(database)/documents/volunteers/$(request.resource.data.volunteerUid))
+        && get(/databases/$(database)/documents/volunteers/$(request.resource.data.volunteerUid)).data.role == 'volunteer'
+        && get(/databases/$(database)/documents/volunteers/$(request.resource.data.volunteerUid)).data.teamId == request.resource.data.teamId
+        && exists(/databases/$(database)/documents/initiatives/$(request.resource.data.initiativeId))
+        && get(/databases/$(database)/documents/initiatives/$(request.resource.data.initiativeId)).data.teamId == request.resource.data.teamId
+        && exists(/databases/$(database)/documents/participationRequests/$(request.resource.data.participationRequestId))
+        && get(/databases/$(database)/documents/participationRequests/$(request.resource.data.participationRequestId)).data.status == 'accepted'
+        && get(/databases/$(database)/documents/participationRequests/$(request.resource.data.participationRequestId)).data.volunteerUid == request.resource.data.volunteerUid
+        && get(/databases/$(database)/documents/participationRequests/$(request.resource.data.participationRequestId)).data.initiativeId == request.resource.data.initiativeId
+        && request.resource.data.volunteerName is string
+        && request.resource.data.volunteerName.size() >= 2
+        && request.resource.data.volunteerName.size() <= 100
+        && request.resource.data.initiativeTitle is string
+        && request.resource.data.initiativeTitle.size() >= 2
+        && request.resource.data.initiativeTitle.size() <= 160
+        && request.resource.data.initiativeDate is string
+        && request.resource.data.initiativeDate.size() >= 8
+        && request.resource.data.initiativeDate.size() <= 10;
+      allow read: if canReadAllOperationalData()
+        || (isTeamLeader() && resource.data.teamId == myTeamId())
+        || (signedIn() && resource.data.volunteerUid == request.auth.uid);
+      allow update: if (
+          (isAdmin() || isVolunteerWorkStaff())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'hours', 'volunteerName', 'initiativeTitle', 'initiativeDate',
+            'certificateNumber', 'certificateUrl', 'reviewNote', 'reviewedBy',
+            'reviewedAt', 'issuedBy', 'issuedAt', 'updatedAt'
+          ])
+          && request.resource.data.status in ['pending', 'approved', 'issued', 'rejected']
+          && (request.resource.data.status != 'approved' || resource.data.status == 'pending')
+          && (request.resource.data.status != 'rejected' || resource.data.status == 'pending')
+          && (request.resource.data.status != 'issued' || resource.data.status == 'approved')
+          && (request.resource.data.status != 'issued' || (
+            request.resource.data.issuedBy == request.auth.uid
+            && request.resource.data.certificateNumber is string
+            && request.resource.data.certificateNumber.size() > 0
+          ))
+          && (!(request.resource.data.status in ['approved', 'rejected'])
+            || request.resource.data.reviewedBy == request.auth.uid)
+          && (!(request.resource.data.status in ['approved', 'issued'])
+            || (request.resource.data.hours is number
+              && request.resource.data.hours > 0
+              && request.resource.data.hours <= 1000))
+          && (!('hours' in request.resource.data)
+            || (request.resource.data.hours is number
+              && request.resource.data.hours > 0
+              && request.resource.data.hours <= 1000))
+          && (!('volunteerName' in request.resource.data)
+            || (request.resource.data.volunteerName is string
+              && request.resource.data.volunteerName.size() >= 2
+              && request.resource.data.volunteerName.size() <= 100))
+          && (!('initiativeTitle' in request.resource.data)
+            || (request.resource.data.initiativeTitle is string
+              && request.resource.data.initiativeTitle.size() >= 2
+              && request.resource.data.initiativeTitle.size() <= 160))
+          && (!('initiativeDate' in request.resource.data)
+            || (request.resource.data.initiativeDate is string
+              && request.resource.data.initiativeDate.size() >= 8
+              && request.resource.data.initiativeDate.size() <= 10))
+          && (!('certificateNumber' in request.resource.data)
+            || request.resource.data.certificateNumber is string)
+          && (!('certificateUrl' in request.resource.data)
+            || request.resource.data.certificateUrl is string)
+        )
+        || (
+          leadsTeam(resource.data.teamId)
+          && resource.data.status == 'rejected'
+          && resource.data.requestedBy == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.requestedBy == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'volunteerName', 'initiativeTitle',
+            'initiativeDate', 'requestedBy', 'updatedAt'
+          ])
+          && request.resource.data.volunteerName is string
+          && request.resource.data.volunteerName.size() >= 2
+          && request.resource.data.volunteerName.size() <= 100
+          && request.resource.data.initiativeTitle is string
+          && request.resource.data.initiativeTitle.size() >= 2
+          && request.resource.data.initiativeTitle.size() <= 160
+          && request.resource.data.initiativeDate is string
+          && request.resource.data.initiativeDate.size() >= 8
+          && request.resource.data.initiativeDate.size() <= 10
+        )
+        || (
+          isExecutive()
+          && resource.data.status in ['pending', 'approved']
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hours', 'updatedAt'])
+          && request.resource.data.hours is number
+          && request.resource.data.hours > 0
+          && request.resource.data.hours <= 1000
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /letters/{letterId} {
+      allow create: if leadsTeam(request.resource.data.teamId)
+        && request.resource.data.leaderUid == request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'teamId', 'teamName', 'leaderUid', 'leaderName', 'subject', 'body',
+          'recipient', 'status', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'teamId', 'teamName', 'leaderUid', 'leaderName', 'subject', 'body',
+          'recipient', 'attachmentUrl', 'status', 'createdAt'
+        ])
+        && request.resource.data.teamName
+          == get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.name
+        && request.resource.data.leaderName
+          == get(/databases/$(database)/documents/volunteers/$(request.auth.uid)).data.displayName
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() >= 3
+        && request.resource.data.subject.size() <= 200
+        && request.resource.data.body is string
+        && request.resource.data.body.size() >= 10
+        && request.resource.data.body.size() <= 5000
+        && request.resource.data.recipient in ['staff', 'executive', 'both']
+        && request.resource.data.status == 'sent'
+        && (!('attachmentUrl' in request.resource.data)
+          || (request.resource.data.attachmentUrl is string
+            && request.resource.data.attachmentUrl.size() <= 1000));
+      allow read: if isAdmin()
+        || (isTeamLeader() && resource.data.teamId == myTeamId())
+        || (isVolunteerWorkStaff() && resource.data.recipient in ['staff', 'both'])
+        || (isExecutive() && resource.data.recipient in ['executive', 'both']);
+      allow update: if (
+          isAdmin()
+          || (isVolunteerWorkStaff() && resource.data.recipient in ['staff', 'both'])
+          || (isExecutive() && resource.data.recipient in ['executive', 'both'])
+        )
+        && resource.data.status == 'sent'
+        && request.resource.data.status == 'reviewed'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'reviewedBy', 'reviewedAt', 'reviewNote'
+        ])
+        && request.resource.data.reviewedBy == request.auth.uid
+        && (!('reviewNote' in request.resource.data)
+          || (request.resource.data.reviewNote is string
+            && request.resource.data.reviewNote.size() <= 2000));
+      allow delete: if isAdmin();
+    }
+
+    match /letterArchive/{letterId} {
+      allow create: if (isAdmin() || isVolunteerWorkStaff())
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'subject', 'entityName', 'letterDate', 'description',
+          'attachments', 'createdBy', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'subject', 'entityName', 'letterDate', 'description',
+          'attachments', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() >= 3
+        && request.resource.data.subject.size() <= 200
+        && request.resource.data.entityName is string
+        && request.resource.data.entityName.size() >= 2
+        && request.resource.data.entityName.size() <= 160
+        && request.resource.data.letterDate is string
+        && request.resource.data.letterDate.size() >= 8
+        && request.resource.data.letterDate.size() <= 10
+        && request.resource.data.description is string
+        && request.resource.data.description.size() >= 10
+        && request.resource.data.description.size() <= 5000
+        && request.resource.data.attachments is list
+        && request.resource.data.attachments.size() <= 5;
+      allow read: if isAdmin() || isVolunteerWorkStaff() || isExecutive();
+      allow update: if (isAdmin() || isVolunteerWorkStaff())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'subject', 'entityName', 'letterDate', 'description',
+          'attachments', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() >= 3
+        && request.resource.data.subject.size() <= 200
+        && request.resource.data.entityName is string
+        && request.resource.data.entityName.size() >= 2
+        && request.resource.data.entityName.size() <= 160
+        && request.resource.data.letterDate is string
+        && request.resource.data.letterDate.size() >= 8
+        && request.resource.data.letterDate.size() <= 10
+        && request.resource.data.description is string
+        && request.resource.data.description.size() >= 10
+        && request.resource.data.description.size() <= 5000
+        && request.resource.data.attachments is list
+        && request.resource.data.attachments.size() <= 5;
+      allow delete: if isAdmin() || isVolunteerWorkStaff();
+    }
+
+    match /notifications/{notificationId} {
+      allow create: if leadsTeam(request.resource.data.teamId)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'teamId', 'createdBy', 'recipientUid', 'message', 'type', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'teamId', 'createdBy', 'recipientUid', 'message', 'type', 'createdAt'
+        ])
+        && request.resource.data.recipientUid is string
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 2000
+        && request.resource.data.type in ['alert', 'warning']
+        && exists(/databases/$(database)/documents/volunteers/$(request.resource.data.recipientUid))
+        && get(/databases/$(database)/documents/volunteers/$(request.resource.data.recipientUid)).data.role == 'volunteer'
+        && get(/databases/$(database)/documents/volunteers/$(request.resource.data.recipientUid)).data.teamId == myTeamId();
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.recipientUid == request.auth.uid)
+        || leadsTeam(resource.data.teamId);
+      allow delete: if isAdmin();
+    }
+  }
+}
