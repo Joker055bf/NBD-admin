@@ -167,6 +167,7 @@ function closeAdminMenu() {
   const menu = document.getElementById("adminQuickMenu");
   const toggle = document.getElementById("adminMenuToggle");
   menu.classList.remove("is-open");
+  menu.style.maxHeight = "";
   toggle.setAttribute("aria-expanded", "false");
 }
 
@@ -175,7 +176,14 @@ document.getElementById("adminMenuToggle").addEventListener("click", () => {
   const toggle = document.getElementById("adminMenuToggle");
   const opening = !menu.classList.contains("is-open");
   menu.classList.toggle("is-open", opening);
+  menu.style.maxHeight = opening
+    ? `${Math.max(200, window.innerHeight - toggle.getBoundingClientRect().bottom - 24)}px`
+    : "";
   toggle.setAttribute("aria-expanded", String(opening));
+});
+
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 900) closeAdminMenu();
 });
 
 function renderAdminNav() {
@@ -1656,7 +1664,6 @@ function renderLeaderMembers(members) {
     const row = document.createElement("tr");
     rowCell(row, user.displayName);
     rowCell(row, user.email);
-    rowCell(row, member.id);
     rows.append(row);
   });
 }
@@ -2198,7 +2205,6 @@ function renderStaffVolunteers(volunteers) {
     const row = document.createElement("tr");
     rowCell(row, user.displayName);
     rowCell(row, user.email);
-    rowCell(row, item.id);
     rowCell(row, user.teamId ? teamLabel(staffTeams, user.teamId) : "بدون فريق");
     rowCell(row, roleLabels[user.role] || "متطوع");
     rows.append(row);
@@ -2626,7 +2632,6 @@ function renderExecutiveUsers(volunteers, teams) {
     const row = document.createElement("tr");
     rowCell(row, user.displayName);
     rowCell(row, user.email);
-    rowCell(row, item.id);
     const currentTeam = teams.find((team) => team.id === user.teamId);
     rowCell(row, currentTeam?.data().name || "—");
     if (item.id === signedInAdmin.uid) {
