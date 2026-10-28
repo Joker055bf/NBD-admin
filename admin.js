@@ -2,6 +2,11 @@ const firebaseConfig = window.firebaseConfig || {};
 const firebaseReady = typeof firebase !== "undefined"
   && Object.values(firebaseConfig).every((value) => typeof value === "string" && value.trim());
 const auth = firebaseReady ? firebase.auth() : null;
+if (auth && typeof auth.setPersistence === "function") {
+  try {
+    auth.setPersistence(firebase.auth.Auth?.Persistence?.LOCAL || "local").catch(() => {});
+  } catch (error) {}
+}
 const db = firebaseReady ? firebase.firestore() : null;
 const storage = firebaseReady && typeof firebase.storage === "function" ? firebase.storage() : null;
 const functions = firebaseReady ? firebase.app().functions("us-central1") : null;
@@ -27,6 +32,8 @@ let editingInitiativeId = null;
 let archiveLetters = [];
 let editingArchiveLetterId = null;
 let editingArchiveAttachments = [];
+let initiativeArchiveFilter = "active";
+let lastInitiatives = [];
 let editingInitiativeRequestId = null;
 let editingCertificateId = null;
 let editingReportId = null;
@@ -203,29 +210,41 @@ function renderAdminNav() {
   });
 }
 
+function applyAdminView(section) {
+  const selector = section === "profile"
+    ? "#adminProfilePanel"
+    : adminNavigationTargets[currentRole]?.[section];
+  const target = selector ? document.querySelector(selector) : null;
+  const targetPanel = target ? (target.closest(".admin-panel") || target) : null;
+  document.querySelectorAll("#adminDashboard .admin-panel, #adminDashboard .admin-stat-row").forEach((unit) => {
+    if (unit.id === "adminProfilePanel") {
+      unit.hidden = section !== "profile";
+      return;
+    }
+    let roleHidden = false;
+    if (unit.dataset.rolePanel) {
+      const allowedRoles = unit.dataset.rolePanel.split(/\s+/);
+      roleHidden = currentRole === "admin"
+        ? !allowedRoles.some((role) => ["admin", "staff", "executive"].includes(role))
+        : !allowedRoles.includes(currentRole);
+    }
+    unit.hidden = roleHidden || (targetPanel ? unit !== targetPanel : false);
+  });
+  window.scrollTo(0, 0);
+}
+
 document.getElementById("adminQuickMenu").addEventListener("click", (event) => {
   const button = event.target.closest("[data-admin-section]");
   if (!button) return;
   const section = button.dataset.adminSection;
+  if (section !== "home" && section !== "profile" && !adminNavigationTargets[currentRole]?.[section]) {
+    showToast("هذا القسم غير متاح في لوحة دورك.");
+    return;
+  }
   document.querySelectorAll("#adminQuickMenu [data-admin-section]").forEach((item) => {
     item.classList.toggle("active", item === button);
   });
-  const profilePanel = document.getElementById("adminProfilePanel");
-  if (section === "profile") {
-    profilePanel.hidden = false;
-    profilePanel.scrollIntoView({ behavior: "smooth", block: "start" });
-  } else {
-    profilePanel.hidden = true;
-    const selector = section === "home"
-      ? ".admin-dashboard-heading"
-      : adminNavigationTargets[currentRole]?.[section];
-    const target = selector && document.querySelector(selector);
-    if (target && !target.closest("[hidden]")) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else {
-      showToast("هذا القسم غير متاح في لوحة دورك.");
-    }
-  }
+  applyAdminView(section);
   closeAdminMenu();
 });
 
@@ -545,15 +564,21 @@ async function loadFounderDashboard() {
   renderRequests(requestsSnapshot.docs);
 }
 function renderUsers(volunteers, administrators, teams) {
-  const rows = document.getElementById("adminUserRows");
-  rows.replaceChildren();
+  const staffRows = document.getElementById("adminUserRows");
+  const volunteerRows = document.getElementById("volunteerUserRows");
+  staffRows.replaceChildren();
+  volunteerRows.replaceChildren();
   const accounts = [
     ...volunteers.map((document) => ({ document, collection: "volunteers" })),
     ...administrators.map((document) => ({ document, collection: "adminAccounts" }))
   ].filter(({ document }) => document.id !== signedInAdmin.uid);
-  document.getElementById("usersEmpty").hidden = accounts.length > 0;
+  const staffAccounts = accounts.filter(({ collection, document }) => collection === "adminAccounts" || document.data().role !== "volunteer");
+  const volunteerAccounts = accounts.filter(({ collection, document }) => collection === "volunteers" && (document.data().role === "volunteer" || !document.data().role));
+  document.getElementById("staffAccountsEmpty").hidden = staffAccounts.length > 0;
+  document.getElementById("usersEmpty").hidden = volunteerAccounts.length > 0;
   accounts.forEach(({ document: userDocument, collection }) => {
     const user = userDocument.data();
+    const rows = collection === "volunteers" && (user.role === "volunteer" || !user.role) ? volunteerRows : staffRows;
     const row = document.createElement("tr");
     const name = document.createElement("td");
     name.textContent = user.displayName || "متطوع";
@@ -680,24 +705,33 @@ function renderInitiativeTeamOptions() {
 }
 
 function renderInitiatives(initiatives) {
+  lastInitiatives = initiatives;
   const rows = document.getElementById("adminInitiativeRows");
   rows.replaceChildren();
-  document.getElementById("initiativesEmpty").hidden = initiatives.length > 0;
-  initiatives.forEach((item) => {
+  const visible = initiatives.filter((item) => (item.data().deleted === true) === (initiativeArchiveFilter === "deleted"));
+  const empty = document.getElementById("initiativesEmpty");
+  empty.textContent = initiativeArchiveFilter === "deleted"
+    ? "لا توجد مبادرات محذوفة."
+    : "لا توجد مبادرات محفوظة.";
+  empty.hidden = visible.length > 0;
+  visible.forEach((item) => {
     const initiative = item.data();
+    const isDeleted = initiative.deleted === true;
     const row = document.createElement("tr");
     rowCell(row, initiative.title || "مبادرة");
     rowCell(row, initiative.teamId ? teamLabel(founderTeams, initiative.teamId) : "بدون فريق");
     rowCell(row, initiative.date || "—");
-    rowCell(row, initiativeStatusLabel(initiative));
+    rowCell(row, isDeleted ? "محذوفة" : initiativeStatusLabel(initiative));
     const publishedCell = document.createElement("td");
     const published = document.createElement("input");
     published.type = "checkbox";
     published.checked = initiative.published === true;
-    published.disabled = initiative.status !== "open";
-    published.title = initiative.status === "open"
-      ? "إظهار المبادرة في الموقع العام أو إخفاؤها"
-      : "النشر المباشر متاح للمبادرات المفتوحة فقط. استخدم زر الاعتماد للمبادرة المعتمدة.";
+    published.disabled = isDeleted || initiative.status !== "open";
+    published.title = isDeleted
+      ? "المبادرة محذوفة؛ استعدها أولًا لتعديل نشرها."
+      : initiative.status === "open"
+        ? "إظهار المبادرة في الموقع العام أو إخفاؤها"
+        : "النشر المباشر متاح للمبادرات المفتوحة فقط. استخدم زر الاعتماد للمبادرة المعتمدة.";
     published.setAttribute("aria-label", `نشر ${initiative.title}`);
     published.addEventListener("change", async () => {
       try {
@@ -713,29 +747,81 @@ function renderInitiatives(initiatives) {
 
     const actionCell = document.createElement("td");
     actionCell.className = "table-action-cell";
-    const editButton = document.createElement("button");
-    editButton.type = "button";
-    editButton.className = "role-save-button";
-    editButton.textContent = "تعديل";
-    editButton.addEventListener("click", () => openInitiativeEdit(item));
-    const acceptButton = document.createElement("button");
-    acceptButton.type = "button";
-    acceptButton.className = "role-save-button is-positive";
-    acceptButton.textContent = initiative.status === "closed" ? "إعادة فتح ونشر" : "قبول ونشر";
-    acceptButton.disabled = initiative.status === "open" && initiative.published === true;
-    acceptButton.addEventListener("click", () => decideInitiative(item, "accept", acceptButton));
-    const rejectButton = document.createElement("button");
-    rejectButton.type = "button";
-    rejectButton.className = "role-save-button is-warning";
-    rejectButton.textContent = initiative.published === true ? "رفض وإخفاء" : "رفض";
-    rejectButton.disabled = initiative.status === "rejected" || initiative.status === "closed";
-    rejectButton.addEventListener("click", () => decideInitiative(item, "reject", rejectButton));
-    actionCell.append(editButton, acceptButton, rejectButton);
+    if (isDeleted) {
+      const restoreButton = document.createElement("button");
+      restoreButton.type = "button";
+      restoreButton.className = "role-save-button is-positive";
+      restoreButton.textContent = "استعادة";
+      restoreButton.addEventListener("click", async () => {
+        restoreButton.disabled = true;
+        try {
+          await item.ref.update({
+            deleted: firebase.firestore.FieldValue.delete(),
+            deletedAt: firebase.firestore.FieldValue.delete()
+          });
+          showToast("تمت استعادة المبادرة إلى القائمة الحالية.");
+          await loadDashboard();
+        } catch (error) {
+          restoreButton.disabled = false;
+          showToast(errorMessage(error));
+        }
+      });
+      actionCell.append(restoreButton);
+    } else {
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "role-save-button";
+      editButton.textContent = "تعديل";
+      editButton.addEventListener("click", () => openInitiativeEdit(item));
+      const acceptButton = document.createElement("button");
+      acceptButton.type = "button";
+      acceptButton.className = "role-save-button is-positive";
+      acceptButton.textContent = initiative.status === "closed" ? "إعادة فتح ونشر" : "قبول ونشر";
+      acceptButton.disabled = initiative.status === "open" && initiative.published === true;
+      acceptButton.addEventListener("click", () => decideInitiative(item, "accept", acceptButton));
+      const rejectButton = document.createElement("button");
+      rejectButton.type = "button";
+      rejectButton.className = "role-save-button is-warning";
+      rejectButton.textContent = initiative.published === true ? "رفض وإخفاء" : "رفض";
+      rejectButton.disabled = initiative.status === "rejected" || initiative.status === "closed";
+      rejectButton.addEventListener("click", () => decideInitiative(item, "reject", rejectButton));
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "role-save-button is-danger";
+      deleteButton.textContent = "حذف";
+      deleteButton.addEventListener("click", async () => {
+        if (!window.confirm(`حذف مبادرة «${initiative.title || "بدون عنوان"}»؟ ستُنقل إلى أرشيف المحذوفات وتُخفى من الموقع العام.`)) return;
+        deleteButton.disabled = true;
+        try {
+          await item.ref.update({
+            deleted: true,
+            published: false,
+            deletedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          showToast("تم حذف المبادرة ونقلها إلى الأرشيف.");
+          await loadDashboard();
+        } catch (error) {
+          deleteButton.disabled = false;
+          showToast(errorMessage(error));
+        }
+      });
+      actionCell.append(editButton, acceptButton, rejectButton, deleteButton);
+    }
 
     row.append(publishedCell, actionCell);
     rows.append(row);
   });
 }
+
+document.querySelectorAll("[data-initiative-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    initiativeArchiveFilter = button.dataset.initiativeFilter;
+    document.querySelectorAll("[data-initiative-filter]").forEach((item) => {
+      item.classList.toggle("is-active", item === button);
+    });
+    renderInitiatives(lastInitiatives);
+  });
+});
 
 async function decideInitiative(item, decision, button) {
   button.disabled = true;
@@ -958,12 +1044,10 @@ function setSelectOptions(select, items, emptyLabel) {
 
 function timestampLabel(value) {
   if (!value || typeof value.toDate !== "function") return "—";
-  return value.toDate().toLocaleDateString("ar-SA-u-nu-latn", {
-    calendar: "gregory",
-    day: "numeric",
-    month: "short",
-    year: "numeric"
-  });
+  const date = value.toDate();
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${date.getFullYear()}`;
 }
 
 function roleStatusLabel(status) {
@@ -1975,14 +2059,25 @@ function openStaffTeamDialog(item) {
   form.elements.description.value = team.description || "";
   const leaderSelect = form.elements.leaderUid;
   leaderSelect.replaceChildren();
-  const currentLeaderOption = document.createElement("option");
-  currentLeaderOption.value = team.leaderUid || "";
-  currentLeaderOption.textContent = team.leaderUid
-    ? profileLabel(staffVolunteers, team.leaderUid)
-    : "بدون قائد حاليًا";
-  leaderSelect.append(currentLeaderOption);
-  leaderSelect.value = currentLeaderOption.value;
-  leaderSelect.disabled = true;
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = "بدون قائد حاليًا";
+  leaderSelect.append(emptyOption);
+  staffVolunteers
+    .filter((user) => ["volunteer", "leader"].includes(user.data().role || "volunteer"))
+    .forEach((user) => {
+      const userData = user.data();
+      const option = document.createElement("option");
+      option.value = user.id;
+      const currentTeamName = userData.teamId ? teamLabel(staffTeams, userData.teamId) : "";
+      const roleNote = userData.role === "leader"
+        ? currentTeamName ? `قائد ${currentTeamName}` : "قائد حاليًا"
+        : "متطوع";
+      option.textContent = `${userData.displayName || userData.email || "متطوع"} (${roleNote})`;
+      leaderSelect.append(option);
+    });
+  leaderSelect.value = team.leaderUid || "";
+  leaderSelect.disabled = false;
   dialog.showModal();
 }
 
@@ -2008,15 +2103,35 @@ document.getElementById("staffTeamEditForm").addEventListener("submit", async (e
     return;
   }
   const leaderUid = form.elements.leaderUid.value;
-  if (!leaderUid && currentRole !== "admin" && editingStaffTeam.data().leaderUid) {
+  const previousLeaderUid = editingStaffTeam.data().leaderUid || "";
+  if (!leaderUid && currentRole !== "admin" && previousLeaderUid) {
     showToast("لا يمكن إزالة قائد الفريق. اختر قائدًا بديلًا.");
     return;
   }
   button.disabled = true;
   try {
+    if (leaderUid && leaderUid !== previousLeaderUid) {
+      const newLeader = staffVolunteers.find((user) => user.id === leaderUid);
+      if (!newLeader) throw new Error("الحساب المحدد لم يعد موجودًا. حدّث القائمة وحاول مجددًا.");
+      const newLeaderData = newLeader.data();
+      if (
+        newLeaderData.role === "leader"
+        && newLeaderData.teamId
+        && newLeaderData.teamId !== editingStaffTeam.id
+        && !window.confirm(`${newLeaderData.displayName || "المستخدم"} قائد حاليًا لفريق آخر. عند المتابعة تنتقل قيادته إلى «${name}» وتُعاد رتبته في فريقه السابق. هل تريد المتابعة؟`)
+      ) {
+        button.disabled = false;
+        return;
+      }
+      await saveVolunteerRole(newLeader, "leader", editingStaffTeam.id);
+    } else if (!leaderUid && previousLeaderUid && currentRole === "admin") {
+      await db.collection("volunteers").doc(previousLeaderUid).update({
+        role: "volunteer",
+        teamId: firebase.firestore.FieldValue.delete()
+      });
+    }
     await editingStaffTeam.ref.update({
       name,
-      leaderUid,
       description: form.elements.description.value.trim()
     });
     staffTeamDialog.close();
